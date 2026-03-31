@@ -108,7 +108,6 @@ if not st.session_state['autenticado']:
             c_u = st.text_input("Login desejado:")
             c_s = st.text_input("Senha Forte:", type="password", help="Maiúscula, Número, Símbolo.")
             c_n = st.text_input("Nome Completo:")
-            # Calendário padrão Brasil
             c_d = st.date_input("Data de Nascimento:", format="DD/MM/YYYY")
             c_t = st.text_input("Telefone:")
             c_e = st.text_input("E-mail:")
@@ -157,6 +156,13 @@ if st.sidebar.button("Sair"):
     st.rerun()
 
 st.markdown("<h2 style='text-align: center; padding: 10px 0;'>🛍️ Gestão Casa das Cuecas</h2>", unsafe_allow_html=True)
+
+# --- ADIÇÃO DO BOTÃO DE ATUALIZAR ---
+col_ref_1, col_ref_2 = st.columns([5, 1])
+with col_ref_2:
+    if st.button("🔄 Atualizar Tempo", use_container_width=True):
+        st.rerun()
+
 tab1, tab2, tab3, tab4 = st.tabs(["🚀 Operacional", "📊 Inteligência", "👥 Equipe", "🔐 Segurança"])
 
 with tab1:
@@ -213,7 +219,7 @@ with tab1:
                     elif res == "Não Convertido": mot_f = st.selectbox("Motivo:", ["Preço", "Falta Modelo", "Só Olhando"])
                     if st.form_submit_button("Finalizar"):
                         executar_db("INSERT INTO historico (data_hora, vendedor, evento, motivo, valor_venda) VALUES (?,?,?,?,?)",
-                                   (datetime.now().strftime("%Y-%m-%d %H:%M"), v['nome'], res, mot_f, vlr))
+                                    (datetime.now().strftime("%Y-%m-%d %H:%M"), v['nome'], res, mot_f, vlr))
                         mover_vendedor(v['id'], 'Esperando'); st.rerun()
 
 with tab2:
