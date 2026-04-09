@@ -14,13 +14,12 @@ st.markdown("""
     .vendedor-box { padding: 10px; border-radius: 8px; margin-bottom: 5px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); }
     .primeiro { border: 2px solid #22C55E !important; background: rgba(34,197,94,0.1) !important; }
     .meta-container { background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.2); margin-bottom: 15px; text-align: center; }
-    /* Ajuste para botões menores na fila */
     .stButton > button { width: 100%; padding: 2px; font-size: 12px; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 2. ENGINE DE DADOS ---
-DB_NAME = 'sistema_elite_v47.db'
+DB_NAME = 'sistema_elite_v48.db'
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME, check_same_thread=False) as conn:
@@ -28,7 +27,6 @@ def run_db(query, params=(), is_select=False):
             if is_select: return pd.read_sql(query, conn, params=params)
             conn.execute(query, params); conn.commit()
             return True
-        except sqlite3.IntegrityError: return "DUPLICADO"
         except Exception: return False
 
 def init_db():
@@ -47,7 +45,7 @@ def get_min_ordem():
     res = run_db("SELECT MIN(ordem) FROM usuarios WHERE status='Esperando'", is_select=True).iloc[0,0]
     return (int(res) if res else 0) - 1
 
-# --- 3. DASHBOARD ---
+# --- 3. INDICADORES ---
 def exibir_indicadores(df):
     if df.empty: return
     vendas = df[df['evento'] == 'Sucesso']
@@ -94,12 +92,10 @@ with tab1:
             is_1 = (idx == 0)
             cl = "vendedor-box primeiro" if is_1 else "vendedor-box"
             
-            # --- TUDO NA MESMA CAIXA ---
             with st.container():
                 st.markdown(f"<div class='{cl}'>👤 <b>{v['nome']}</b></div>", unsafe_allow_html=True)
                 btn_cols = st.columns([1, 1, 1])
                 
-                # Botão Atender (Só para o 1º) ou Fura (Para os outros)
                 if is_1:
                     if btn_cols[0].button("Atender", key=f"at_{v['id']}", type="primary"):
                         run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],)); st.rerun()
@@ -107,22 +103,23 @@ with tab1:
                     if btn_cols[0].button("⚡ Furar", key=f"fu_{v['id']}"):
                         st.session_state[f"f_{v['id']}"] = True
                 
-                # Botão Pausa (Sempre visível)
                 if btn_cols[1].button("☕ Pausa", key=f"ps_{v['id']}"):
                     st.session_state[f"p_{v['id']}"] = True
 
-                # Expansores de formulário dentro da mesma iteração
+                # --- RESPOSTAS PRÉ-DEFINIDAS NO FURA-FILA ---
                 if st.session_state.get(f"f_{v['id']}", False):
-                    with st.expander("⚡ Justificar Fura-Fila", expanded=True):
-                        mot_f = st.text_input("Motivo:", key=f"jm_{v['id']}")
-                        if st.button("Confirmar Furada", key=f"cfm_f_{v['id']}"):
+                    with st.expander("⚡ Justificativa Fura-Fila", expanded=True):
+                        mot_f = st.selectbox("Selecione o Motivo:", 
+                                            ["Cliente Voltou", "Atendimento Específico", "Finalização de Venda", "Troca Rápida", "Outros"], 
+                                            key=f"sm_f_{v['id']}")
+                        if st.button("Confirmar Prioridade", key=f"cfm_f_{v['id']}"):
                             run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", mot_f, 0.0, 0, get_now().isoformat()))
                             run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                             st.session_state[f"f_{v['id']}"] = False; st.rerun()
 
                 if st.session_state.get(f"p_{v['id']}", False):
                     with st.expander("☕ Motivo Pausa", expanded=True):
-                        mot_p = st.selectbox("Tipo:", ["Almoço", "Feedback", "Banheiro", "Outros"], key=f"sm_{v['id']}")
+                        mot_p = st.selectbox("Tipo:", ["Almoço", "Feedback", "Banheiro", "Café/Lanche", "Outros"], key=f"sm_p_{v['id']}")
                         if st.button("Confirmar Pausa", key=f"cfm_p_{v['id']}"):
                             run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Pausa", mot_p, 0.0, 0, get_now().isoformat()))
                             run_db("UPDATE usuarios SET status='Pausa', ordem=0 WHERE id=?", (v['id'],))
@@ -152,6 +149,7 @@ with tab1:
 
 with tab2:
     st.write("### 📊 Gestão e Histórico")
+    # ... (Seção de Lançamento Manual e Editor de Dados idêntica à v47 para manter estabilidade)
     with st.expander("➕ Lançamento Manual"):
         with st.form("f_man"):
             m_v = st.selectbox("Vendedor", run_db("SELECT nome FROM usuarios", is_select=True))
@@ -175,7 +173,7 @@ with tab2:
                 st.success("Sincronizado!"); st.rerun()
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer: df_f.to_excel(writer, index=False)
-            st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name="relatorio.xlsx")
+            st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name="relatorio_final.xlsx")
 
 with tab3:
     n_meta = st.number_input("Meta Diária:", value=float(meta_loja))
