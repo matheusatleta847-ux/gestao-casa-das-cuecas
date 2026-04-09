@@ -62,7 +62,6 @@ if not st.session_state.user:
 tab1, tab2, tab3 = st.tabs(["🛒 Operação", "📈 Desempenho", "⚙️ Configurações"])
 
 with tab1:
-    # Dados de Meta e Hoje
     meta_loja = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
     hoje_dt = get_now().strftime('%Y-%m-%d')
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
@@ -83,12 +82,10 @@ with tab1:
             cl = "vendedor-box primeiro" if is_1 else "vendedor-box"
             
             with st.container():
-                # Nome do Vendedor em destaque
                 st.markdown(f"<div class='{cl}'>👤 <b>{v['nome'].upper()}</b></div>", unsafe_allow_html=True)
+                b_cols = st.columns([1, 1, 1])
                 
-                # Grupo de Botões Juntos
-                b_cols = st.columns([1.2, 1, 1])
-                
+                # Botão Principal (Atender ou Furar)
                 if is_1:
                     if b_cols[0].button("▶️ ATENDER", key=f"at_{v['id']}", type="primary"):
                         run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],)); st.rerun()
@@ -96,10 +93,11 @@ with tab1:
                     if b_cols[0].button("⚡ FURAR", key=f"fu_{v['id']}"):
                         st.session_state[f"fura_{v['id']}"] = True
                 
+                # Botão Pausa
                 if b_cols[1].button("☕ PAUSA", key=f"ps_{v['id']}"):
                     st.session_state[f"pausa_{v['id']}"] = True
 
-                # Interface de Justificativa (Aparece apenas se clicado)
+                # --- CORREÇÃO DO ERRO DE SINTAXE ---
                 if st.session_state.get(f"fura_{v['id']}", False):
                     mot_f = st.selectbox("Motivo do Fura-Fila:", ["Cliente Voltou", "Atendimento Específico", "Finalização", "Troca", "Outros"], key=f"sel_f_{v['id']}")
                     c1, c2 = st.columns(2)
@@ -108,7 +106,7 @@ with tab1:
                         run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                         st.session_state[f"fura_{v['id']}"] = False; st.rerun()
                     if c2.button("Cancelar", key=f"can_f_{v['id']}"):
-                        st.session_state[fura_{v['id']}] = False; st.rerun()
+                        st.session_state[f"fura_{v['id']}"] = False; st.rerun()
 
                 if st.session_state.get(f"pausa_{v['id']}", False):
                     mot_p = st.selectbox("Tipo de Pausa:", ["Almoço", "Feedback", "Banheiro", "Café", "Outros"], key=f"sel_p_{v['id']}")
@@ -128,7 +126,7 @@ with tab1:
                 res = st.selectbox("Resultado", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
                 vlr, it, mot = 0.0, 0, res
                 if res == "Sucesso":
-                    vlr = st.number_input("R$:", min_value=0.0, key=f"v_{v['id']}")
+                    vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}")
                     it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}")
                 elif res == "Não convertido":
                     mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Cor", "Só olhando"], key=f"m_{v['id']}")
@@ -145,7 +143,6 @@ with tab1:
 
 with tab2:
     st.write("### 📊 Relatórios")
-    # Filtro de Período
     d_r = st.date_input("Filtrar Período:", value=(date.today() - timedelta(days=7), date.today()))
     if isinstance(d_r, tuple) and len(d_r) == 2:
         df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()), is_select=True)
