@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (ESTILO BOTÕES VAZADOS/BORDADOS) ---
+# --- 1. CONFIGURAÇÃO E CSS (DESIGN INDICADORES) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
@@ -20,7 +20,7 @@ st.markdown("""
         color: #1E1F23 !important; 
     }
 
-    /* Cartão Principal */
+    /* Cartão Principal de Indicadores */
     .dashboard-card {
         background-color: #FFFFFF !important;
         padding: 24px;
@@ -32,34 +32,13 @@ st.markdown("""
 
     .metric-box { text-align: center; border-right: 1px solid #E6E9EF; }
     .metric-box:last-child { border-right: none; }
-    .val-faturamento { font-size: 32px; font-weight: 800; color: #0073EA; }
-    .val-falta { font-size: 14px; font-weight: 700; color: #E44258; }
-
-    /* --- ESTILO DOS BOTÕES PADRÃO VERDE (AGORA EM AZUL) --- */
-    .stButton > button {
-        border-radius: 4px !important;
-        font-weight: 700 !important;
-        height: 42px;
-        border: 1px solid #D0D4E4 !important;
-        background-color: #FFFFFF !important;
-        transition: all 0.2s;
-    }
-
-    /* Estilo Especial para Botões de Ação (ATENDER / CONFIRMAR) */
-    /* Fundo Azul Claro com Borda Lateral Azul Forte */
-    .stButton > button[kind="primary"] {
-        background-color: #E8F4FF !important; /* Azul bem clarinho */
-        color: #0073EA !important; /* Texto em Azul Monday */
-        border: 1px solid #A2CFFF !important;
-        border-left: 8px solid #0073EA !important; /* Borda lateral igual ao card */
-    }
     
-    .stButton > button[kind="primary"]:hover {
-        background-color: #D1E9FF !important;
-        border-color: #0073EA !important;
-    }
+    .label-meta { font-weight: 700; color: #676879; font-size: 13px; text-transform: uppercase; }
+    .val-faturamento { font-size: 32px; font-weight: 800; color: #0073EA; }
+    .val-falta { font-size: 20px; font-weight: 700; color: #E44258; } /* Vermelho Monday para o que falta */
+    .val-indicador { font-size: 24px; font-weight: 800; color: #323338; }
 
-    /* Vendedor Item */
+    /* Estilo Fila */
     .vendedor-item {
         padding: 14px 18px;
         border-radius: 6px;
@@ -67,10 +46,11 @@ st.markdown("""
         background-color: #FFFFFF !important;
         border: 1px solid #BDC1D1;
     }
-    .primeiro-da-vez { 
-        border-left: 8px solid #00C875 !important; 
-        background-color: #F0FFF4 !important; 
-    }
+    .primeiro-da-vez { border-left: 8px solid #00C875 !important; background-color: #F0FFF4 !important; }
+    
+    /* Botões */
+    .stButton > button { border-radius: 4px !important; font-weight: 700 !important; height: 40px; }
+    .stButton > button[kind="primary"] { background-color: #0073EA !important; color: #FFFFFF !important; border: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -121,26 +101,29 @@ with tab1:
     hoje_dt = get_now().strftime('%Y-%m-%d')
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
     
+    # Cálculos de Indicadores
     vendas_sucesso = df_hoje[df_hoje['evento'] == 'Sucesso']
     fat_h = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0.0
     falta_meta = max(0, meta_val - fat_h)
+    
     pa_hoje = vendas_sucesso['itens'].sum() / len(vendas_sucesso) if not vendas_sucesso.empty else 0.0
     tm_hoje = fat_h / len(vendas_sucesso) if not vendas_sucesso.empty else 0.0
 
+    # --- WIDGETS DE PERFORMANCE SUPERIOR ---
     st.markdown(f"""
         <div class='dashboard-card'>
             <div style='display: flex; justify-content: space-around; align-items: center;'>
                 <div class='metric-box' style='flex: 2;'>
-                    <div style='font-weight:700; color:#676879; font-size:12px;'>🎯 FATURAMENTO HOJE</div>
+                    <div class='label-meta'>🎯 Faturamento Hoje</div>
                     <div class='val-faturamento'>R$ {fat_h:,.2f}</div>
-                    <div class='val-falta'>Falta: R$ {falta_meta:,.2f}</div>
+                    <div class='val-falta' style="font-size: 14px;">Falta: R$ {falta_meta:,.2f} para a meta</div>
                 </div>
                 <div class='metric-box' style='flex: 1;'>
-                    <div style='font-weight:700; color:#676879; font-size:12px;'>📦 P.A.</div>
+                    <div class='label-meta'>📦 P.A.</div>
                     <div class='val-indicador'>{pa_hoje:.2f}</div>
                 </div>
                 <div class='metric-box' style='flex: 1;'>
-                    <div style='font-weight:700; color:#676879; font-size:12px;'>🎫 TICKET MÉDIO</div>
+                    <div class='label-meta'>🎫 Ticket Médio</div>
                     <div class='val-indicador'>R$ {tm_hoje:,.0f}</div>
                 </div>
             </div>
@@ -180,7 +163,7 @@ with tab1:
 
             if st.session_state.get(f"p_{v['id']}", False):
                 mot_p = st.selectbox("Motivo?", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
-                if st.button("Confirmar Saída", key=f"ok_p_{v['id']}", type="primary"):
+                if st.button("Sair Agora", key=f"ok_p_{v['id']}", type="primary"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Fora', ordem=0 WHERE id=?", (v['id'],))
                     st.session_state[f"p_{v['id']}"] = False; st.rerun()
