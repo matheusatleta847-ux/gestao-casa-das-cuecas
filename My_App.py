@@ -163,4 +163,27 @@ with t2:
         df_export = dados_raw.sort_values(by='id', ascending=False)
         df_export.columns = ['ID', 'Vendedor', 'Tipo de Evento', 'Detalhe/Motivo', 'Valor da Venda', 'Itens', 'Data e Hora (SP)']
         
-        buffer = io.BytesIO
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_export.to_excel(writer, index=False, sheet_name='Auditoria_Loja')
+        st.download_button("📊 Baixar Relatório Excel Completo", data=buffer.getvalue(), file_name=f"Auditoria_Casa_Cuecas_{datetime.now().strftime('%d_%m')}.xlsx")
+    else:
+        st.info("Nenhum dado registrado para exibir performance no momento.")
+
+with t3:
+    if st.session_state.user['is_admin']:
+        st.subheader("⚙️ Gestão de Equipe")
+        n = st.text_input("Nome Completo:")
+        if st.button("Cadastrar Vendedor"):
+            if n:
+                l = n.lower().replace(" ", ".")
+                try:
+                    run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (n.title(), l, 'Fora', 0))
+                    st.rerun()
+                except: st.error("Erro ou Login já existe.")
+        equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
+        for _, r in equipe.iterrows():
+            cn, ce = st.columns([4, 1])
+            cn.write(f"👤 **{r['nome']}**")
+            if ce.button("Remover", key=f"del_{r['id']}"):
+                run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
