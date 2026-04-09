@@ -16,8 +16,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. BANCO DE DADOS (Adicionando coluna de itens) ---
+# --- 2. MOTOR DE DADOS ---
 DB_NAME = 'gestao_elite_v14.db'
+
+# Função para obter o horário de Brasília (UTC-3)
+def get_now_br():
+    return datetime.utcnow() - timedelta(hours=3)
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME) as conn:
@@ -35,7 +39,6 @@ init_db()
 # --- 3. ACESSO ---
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
-    # (Mesmo bloco de login anterior...)
     st.markdown("<h2 style='text-align: center;'>🔐 Login PRO-Vez Elite</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
@@ -52,13 +55,15 @@ if not st.session_state.user:
     st.stop()
 
 # --- 4. KPIs DE INTELIGÊNCIA ---
+# Filtro de 30 dias usando o fuso corrigido
 dados_raw = run_db("SELECT * FROM historico WHERE data >= ?", 
-                   ((datetime.now() - timedelta(days=30)).isoformat(),), True)
+                   ((get_now_br() - timedelta(days=30)).isoformat(),), True)
 
 vendas_reais = dados_raw[dados_raw['evento'] == 'Sucesso']
 atendimentos = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
 
 faturamento = vendas_reais['valor'].sum() if not vendas_reais.empty else 0
+# Métrica P.A. (Peças por Atendimento)
 pa_medio = (vendas_reais['itens'].sum() / len(vendas_reais)) if not vendas_reais.empty else 0
 conversao = (len(vendas_reais) / len(atendimentos) * 100) if not atendimentos.empty else 0
 
@@ -72,13 +77,13 @@ k4.markdown(f'<div class="metric-card">Ticket Médio<br><b>R$ {(faturamento/len(
 t1, t2, t3 = st.tabs(["📋 OPERAÇÃO (FILA)", "📊 INTELIGÊNCIA (DASHBOARD)", "⚙️ EQUIPE"])
 
 with t1:
-    # (Lógica da Fila idêntica à v13, mas no fechamento da venda adicionamos o campo 'itens')
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
     c_fila, c_atend, c_fora = st.columns(3)
 
     def get_next_ordem():
         res = run_db("SELECT MAX(ordem) FROM usuarios", is_select=True)
-        return (res.iloc[0,0] if res.iloc[0,0] is not None else 0) + 1
+        val = res.iloc[0,0] if not res.empty else 0
+        return (val if val is not None else 0) + 1
 
     with c_fila:
         st.subheader("⏳ Na Vez")
@@ -99,7 +104,8 @@ with t1:
                     if st.button("Confirmar", key=f"c_{v['id']}"):
                         ev = "FINAL DE DIA" if mot == "Finalizar dia" else "SAÍDA (PAUSA)"
                         run_db("UPDATE usuarios SET status='Fora', motivo_pausa=? WHERE id=?", (mot, v['id']))
-                        run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, mot, datetime.now().isoformat()))
+                        # Auditoria Invisível: Registro de Saída
+                        run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, mot, get_now_br().isoformat()))
                         st.session_state[f"m_{v['id']}"] = False; st.rerun()
 
     with c_atend:
@@ -113,10 +119,18 @@ with t1:
             if st.session_state.get(f"f_{v['id']}", False):
                 with st.expander("Dados da Venda:", expanded=True):
                     res = st.selectbox("Resultado:", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
+                    # Se não for sucesso, permite selecionar o motivo da perda
+                    perda = ""
+                    if res != "Sucesso":
+                        perda = st.selectbox("Motivo:", ["Preço", "Falta Tamanho", "Só olhando", "Falta Cor", "Troca sem compra"], key=f"p_{v['id']}")
+                    
                     vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
-                    it = st.number_input("Qtd Itens:", min_value=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
+                    it = st.number_input("Qtd Itens (P.A.):", min_value=1, step=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
+                    
                     if st.button("Gravar", key=f"g_{v['id']}"):
-                        run_db("INSERT INTO historico (vendedor, evento, valor, itens, data) VALUES (?,?,?,?,?)", (v['nome'], res, vlr, it, datetime.now().isoformat()))
+                        # Gravação completa para Auditoria
+                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
+                               (v['nome'], res, perda, vlr, it, get_now_br().isoformat()))
                         run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_next_ordem(), v['id']))
                         st.session_state[f"f_{v['id']}"] = False; st.rerun()
 
@@ -126,7 +140,8 @@ with t1:
             st.markdown(f"<div class='vendedor-box'><b>{v['nome']}</b><br><small>{v['motivo_pausa']}</small></div>", unsafe_allow_html=True)
             if st.button(f"Entrar: {v['nome']}", key=f"ret_{v['id']}"):
                 ev = "INÍCIO DE DIA" if v['motivo_pausa'] in ["Finalizar dia", None] else "RETORNO (PAUSA)"
-                run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, v['motivo_pausa'], datetime.now().isoformat()))
+                # Auditoria Invisível: Registro de Retorno
+                run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, v['motivo_pausa'], get_now_br().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (get_next_ordem(), v['id']))
                 st.rerun()
 
@@ -136,27 +151,32 @@ with t2:
         c_g1, c_g2 = st.columns(2)
         
         with c_g1:
-            # Gráfico de Faturamento Interativo
+            # Gráfico de Faturamento Interativo (Plotly)
             df_f = vendas_reais.groupby('vendedor')['valor'].sum().reset_index()
-            fig1 = px.bar(df_f, x='vendedor', y='valor', title="Faturamento por Vendedor (R$)", color='valor', color_continuous_scale='Greens')
+            fig1 = px.bar(df_f, x='vendedor', y='valor', title="Faturamento por Vendedor (R$)", 
+                          color='valor', color_continuous_scale='Greens', template="plotly_white")
             st.plotly_chart(fig1, use_container_width=True)
             
         with c_g2:
-            # Gráfico de Motivos de Perda
+            # Gráfico de Motivos de Perda (Plotly)
             df_p = atendimentos[atendimentos['evento'] == 'Não convertido'].groupby('motivo').size().reset_index(name='qtd')
-            fig2 = px.pie(df_p, values='qtd', names='motivo', title="Motivos de Perda de Venda", hole=0.4)
-            st.plotly_chart(fig2, use_container_width=True)
+            if not df_p.empty:
+                fig2 = px.pie(df_p, values='qtd', names='motivo', title="Motivos de Perda de Venda", 
+                             hole=0.4, template="plotly_white")
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.info("Sem dados de perda para exibir o gráfico.")
 
         st.divider()
-        # Botão Excel... (mesma lógica anterior)
+        # Auditoria Invisível: Exportação completa do histórico com data local
         buffer = io.BytesIO()
+        df_export = run_db("SELECT vendedor, evento, motivo, valor, itens, data FROM historico ORDER BY data DESC", is_select=True)
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            dados_raw.to_excel(writer, index=False)
-        st.download_button("📥 Baixar Auditoria Completa (.xlsx)", data=buffer.getvalue(), file_name="Auditoria_Elite.xlsx")
+            df_export.to_excel(writer, index=False, sheet_name='Auditoria_Completa')
+        st.download_button("📥 Baixar Auditoria Completa (.xlsx)", data=buffer.getvalue(), file_name=f"Auditoria_Elite_{get_now_br().strftime('%Y%m%d_%H%M')}.xlsx")
     else: st.info("Aguardando dados...")
 
 with t3:
-    # (Lógica de Gestão de Equipe v13...)
     if st.session_state.user['is_admin']:
         st.subheader("Equipe")
         n_nv = st.text_input("Nome:")
@@ -166,7 +186,8 @@ with t3:
                 try:
                     run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (n_nv.title(), l_nv, 'Fora', 0))
                     st.rerun()
-                except: st.error("Existe!")
+                except: st.error("Este login já existe!")
+        
         equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
         for _, r in equipe.iterrows():
             c_n, c_e = st.columns([3, 1])
