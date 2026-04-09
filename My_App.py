@@ -5,18 +5,14 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (LIMPEZA DE ESPAÇOS VAZIOS) ---
+# --- 1. CONFIGURAÇÃO E CSS (DESIGN INDICADORES) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
-
-    /* Fundo suave Monday */
     .stApp { background-color: #F5F6F8 !important; }
-    
-    /* Remove o espaço em branco padrão do Streamlit no topo */
-    .block-container { padding-top: 1rem !important; }
+    .block-container { padding-top: 1.5rem !important; }
 
     /* Texto Global */
     h1, h2, h3, p, span, label, .stMarkdown { 
@@ -24,32 +20,25 @@ st.markdown("""
         color: #1E1F23 !important; 
     }
 
-    /* Cartão de Meta Unificado - Sem espaços fantasmas */
-    .meta-card-unificado {
+    /* Cartão Principal de Indicadores */
+    .dashboard-card {
         background-color: #FFFFFF !important;
-        padding: 20px;
+        padding: 24px;
         border-radius: 8px;
         border: 1px solid #C3C6D4;
         box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-        margin-bottom: 25px;
-        margin-top: -10px; /* Puxa para cima para remover vácuo */
+        margin-bottom: 20px;
     }
 
-    .meta-titulo {
-        font-weight: 800;
-        font-size: 14px;
-        color: #676879;
-        text-transform: uppercase;
-        margin-bottom: 10px;
-    }
+    .metric-box { text-align: center; border-right: 1px solid #E6E9EF; }
+    .metric-box:last-child { border-right: none; }
+    
+    .label-meta { font-weight: 700; color: #676879; font-size: 13px; text-transform: uppercase; }
+    .val-faturamento { font-size: 32px; font-weight: 800; color: #0073EA; }
+    .val-falta { font-size: 20px; font-weight: 700; color: #E44258; } /* Vermelho Monday para o que falta */
+    .val-indicador { font-size: 24px; font-weight: 800; color: #323338; }
 
-    .meta-valor {
-        font-size: 34px;
-        font-weight: 800;
-        color: #0073EA !important;
-    }
-
-    /* Vendedor Item */
+    /* Estilo Fila */
     .vendedor-item {
         padding: 14px 18px;
         border-radius: 6px;
@@ -57,27 +46,11 @@ st.markdown("""
         background-color: #FFFFFF !important;
         border: 1px solid #BDC1D1;
     }
-    .primeiro-da-vez {
-        border-left: 8px solid #00C875 !important;
-        background-color: #F0FFF4 !important;
-    }
-    .vendedor-nome-texto {
-        font-weight: 700 !important;
-        font-size: 18px !important;
-    }
-
+    .primeiro-da-vez { border-left: 8px solid #00C875 !important; background-color: #F0FFF4 !important; }
+    
     /* Botões */
-    .stButton > button {
-        border-radius: 4px !important;
-        font-weight: 700 !important;
-        height: 40px;
-        border: 1px solid #D0D4E4 !important;
-    }
-    .stButton > button[kind="primary"] {
-        background-color: #0073EA !important;
-        color: #FFFFFF !important;
-        border: none !important;
-    }
+    .stButton > button { border-radius: 4px !important; font-weight: 700 !important; height: 40px; }
+    .stButton > button[kind="primary"] { background-color: #0073EA !important; color: #FFFFFF !important; border: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -112,13 +85,11 @@ def get_min_ordem():
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
     with st.columns([1,1,1])[1]:
-        st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
+        st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
         st.title("Acesse o Painel")
         u, p = st.text_input("Login").lower(), st.text_input("Senha", type="password")
         if st.button("Entrar", type="primary", use_container_width=True):
-            if u == "admin" and p == "admin123": 
-                st.session_state.user = {"nome":"Admin", "role":"admin"}
-                st.rerun()
+            if u == "admin" and p == "admin123": st.session_state.user = {"nome":"Admin", "role":"admin"}; st.rerun()
             else: st.error("Dados incorretos.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
@@ -129,13 +100,33 @@ with tab1:
     meta_val = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
     hoje_dt = get_now().strftime('%Y-%m-%d')
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
-    fat_h = df_hoje[df_hoje['evento']=='Sucesso']['valor'].sum() if not df_hoje.empty else 0
     
-    # RESOLUÇÃO DA BARRA BRANCA: Todo o conteúdo da meta dentro de UM ÚNICO container
+    # Cálculos de Indicadores
+    vendas_sucesso = df_hoje[df_hoje['evento'] == 'Sucesso']
+    fat_h = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0.0
+    falta_meta = max(0, meta_val - fat_h)
+    
+    pa_hoje = vendas_sucesso['itens'].sum() / len(vendas_sucesso) if not vendas_sucesso.empty else 0.0
+    tm_hoje = fat_h / len(vendas_sucesso) if not vendas_sucesso.empty else 0.0
+
+    # --- WIDGETS DE PERFORMANCE SUPERIOR ---
     st.markdown(f"""
-        <div class='meta-card-unificado'>
-            <div class='meta-titulo'>🎯 Meta Diária da Loja</div>
-            <div class='meta-valor'>R$ {fat_h:,.2f} <span style='font-size:16px; color:#676879; font-weight:700;'>/ R$ {meta_val:,.2f}</span></div>
+        <div class='dashboard-card'>
+            <div style='display: flex; justify-content: space-around; align-items: center;'>
+                <div class='metric-box' style='flex: 2;'>
+                    <div class='label-meta'>🎯 Faturamento Hoje</div>
+                    <div class='val-faturamento'>R$ {fat_h:,.2f}</div>
+                    <div class='val-falta' style="font-size: 14px;">Falta: R$ {falta_meta:,.2f} para a meta</div>
+                </div>
+                <div class='metric-box' style='flex: 1;'>
+                    <div class='label-meta'>📦 P.A.</div>
+                    <div class='val-indicador'>{pa_hoje:.2f}</div>
+                </div>
+                <div class='metric-box' style='flex: 1;'>
+                    <div class='label-meta'>🎫 Ticket Médio</div>
+                    <div class='val-indicador'>R$ {tm_hoje:,.0f}</div>
+                </div>
+            </div>
         </div>
     """, unsafe_allow_html=True)
     st.progress(min(fat_h/meta_val, 1.0) if meta_val > 0 else 0.0)
@@ -150,7 +141,7 @@ with tab1:
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
             cl = "vendedor-item primeiro-da-vez" if is_1 else "vendedor-item"
-            st.markdown(f"<div class='{cl}'><span class='vendedor-nome-texto'>{v['nome'].upper()}</span>", unsafe_allow_html=True)
+            st.markdown(f"<div class='{cl}'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
             
             b_cols = st.columns([1, 1, 1])
             if is_1:
@@ -164,15 +155,15 @@ with tab1:
                 st.session_state[f"p_{v['id']}"] = True
 
             if st.session_state.get(f"f_{v['id']}", False):
-                mot_f = st.selectbox("**Justificativa:**", ["Cliente Voltou", "Específico", "Troca"], key=f"s_f_{v['id']}")
+                mot_f = st.selectbox("Justificativa:", ["Cliente Voltou", "Específico", "Troca"], key=f"s_f_{v['id']}")
                 if st.button("Confirmar Furada", key=f"ok_f_{v['id']}", type="primary"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", mot_f, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                     st.session_state[f"f_{v['id']}"] = False; st.rerun()
 
             if st.session_state.get(f"p_{v['id']}", False):
-                mot_p = st.selectbox("**Motivo:**", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
-                if st.button("Confirmar Saída", key=f"ok_p_{v['id']}", type="primary"):
+                mot_p = st.selectbox("Motivo?", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
+                if st.button("Sair Agora", key=f"ok_p_{v['id']}", type="primary"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Fora', ordem=0 WHERE id=?", (v['id'],))
                     st.session_state[f"p_{v['id']}"] = False; st.rerun()
@@ -181,45 +172,45 @@ with tab1:
     with c_a:
         st.write("### 🚀 ATENDENDO")
         for _, v in vendedores[vendedores['status'] == 'Atendendo'].iterrows():
-            st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
+            st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
             st.write(f"VENDEDOR: **{v['nome'].upper()}**")
-            res = st.selectbox("**RESULTADO**", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
+            res = st.selectbox("Resultado", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
             vlr, it, mot = 0.0, 0, res
             if res == "Sucesso":
                 vlr = st.number_input("R$:", min_value=0.0, key=f"v_{v['id']}")
-                it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}")
+                it = st.number_input("Peças:", min_value=1, step=1, key=f"i_{v['id']}")
             elif res == "Não convertido":
                 mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Só olhando"], key=f"m_{v['id']}")
-            if st.button("GRAVAR ATENDIMENTO", key=f"ff_{v['id']}", type="primary", use_container_width=True):
+            if st.button("GRAVAR", key=f"ff_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, mot, vlr, it, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
     with c_p:
-        st.write("### 💤 FORA DA LOJA")
+        st.write("### 💤 FORA")
         for _, v in vendedores[vendedores['status'] == 'Fora'].iterrows():
-            st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
+            st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
             st.write(f"👤 **{v['nome'].upper()}**")
-            if st.button(f"ENTRAR NA FILA", key=f"ret_{v['id']}", type="primary", use_container_width=True):
+            if st.button(f"ENTRAR", key=f"ret_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Entrou", 0.0, 0, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
 with tab3:
-    st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
+    st.markdown("<div class='dashboard-card'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
-    nm = st.number_input("**Meta da Loja (R$):**", value=float(meta_val))
-    if st.button("ATUALIZAR META", type="primary"):
+    nm = st.number_input("Meta da Loja (R$):", value=float(meta_val))
+    if st.button("SALVAR META", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,))
         st.rerun()
     st.divider()
     with st.form("add_v"):
-        nn = st.text_input("**NOME DO NOVO VENDEDOR**")
+        nn = st.text_input("Novo Vendedor")
         if st.form_submit_button("CADASTRAR", type="primary"):
             run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0)); st.rerun()
     equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
     for _, r in equipe.iterrows():
         c1, c2 = st.columns([4,1])
-        c1.write(f"**👤 {r['nome'].upper()}**")
+        c1.write(f"👤 {r['nome'].upper()}")
         if c2.button("X", key=f"rm_{r['id']}"): run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
