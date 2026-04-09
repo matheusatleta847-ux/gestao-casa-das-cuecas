@@ -5,21 +5,21 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (ESTILO MONDAY.COM LIMPO) ---
+# --- 1. CONFIGURAÇÃO E CSS (ESTILO MONDAY REFINADO) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
-    /* Fundo padrão Monday */
+    /* Fundo suave */
     .stApp { background-color: #F5F6F8 !important; }
     
-    /* Cores de texto e fontes */
+    /* Cores de texto Monday */
     h1, h2, h3, p, span, label { 
         font-family: "Figtree", sans-serif !important;
         color: #323338 !important; 
     }
 
-    /* Cartão Monday - Sem espaços fantasmas no topo */
+    /* Cartão Monday White */
     .monday-card {
         background-color: #FFFFFF !important;
         padding: 20px;
@@ -45,21 +45,47 @@ st.markdown("""
         border: 1px solid #E6E9EF;
     }
     .primeiro-da-vez {
-        border-left: 5px solid #00C875 !important;
+        border-left: 6px solid #00C875 !important;
         background-color: #F8FFF9 !important;
     }
 
-    /* Botões - Correção de Estilo */
+    /* BOTÕES CUSTOMIZADOS - ESTILO MONDAY */
     .stButton > button {
         border-radius: 4px !important;
         font-weight: 500 !important;
         height: 36px;
         transition: all 0.2s;
+        border: 1px solid #D0D4E4 !important;
+        background-color: #FFFFFF !important;
+        color: #323338 !important;
+    }
+
+    /* Hover nos botões */
+    .stButton > button:hover {
+        border-color: #0073EA !important;
+        color: #0073EA !important;
+        background-color: #F0F7FF !important;
+    }
+
+    /* Botão Primário (Azul Monday) - Substitui o Vermelho feio */
+    .stButton > button[kind="primary"] {
+        background-color: #0073EA !important;
+        color: #FFFFFF !important;
+        border: none !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background-color: #0060B9 !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Estilo para o botão "Sair" específico para não ser vermelho */
+    button[key^="ps_"] {
+        background-color: #F5F6F8 !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. ENGINE DE DADOS ---
+# --- 2. MOTOR DE DADOS ---
 DB_NAME = 'sistema_elite_v51.db'
 
 def run_db(query, params=(), is_select=False):
@@ -109,7 +135,6 @@ with tab1:
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
     fat_h = df_hoje[df_hoje['evento']=='Sucesso']['valor'].sum() if not df_hoje.empty else 0
     
-    # Cartão de Meta
     st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
     st.write("🎯 **Meta Diária**")
     st.markdown(f"<div class='meta-valor'>R$ {fat_h:,.2f} <span style='font-size:14px; color:#676879; font-weight:400;'>de R$ {meta_val:,.2f}</span></div>", unsafe_allow_html=True)
@@ -129,7 +154,6 @@ with tab1:
             
             b_cols = st.columns([1, 1, 1])
             if is_1:
-                # CORREÇÃO AQUI: type="primary"
                 if b_cols[0].button("Atender", key=f"at_{v['id']}", type="primary"):
                     run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],)); st.rerun()
             else:
@@ -148,7 +172,7 @@ with tab1:
 
             if st.session_state.get(f"p_{v['id']}", False):
                 mot_p = st.selectbox("Motivo?", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
-                if st.button("Sair", key=f"ok_p_{v['id']}", type="primary"):
+                if st.button("Sair Agora", key=f"ok_p_{v['id']}", type="primary"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Fora', ordem=0 WHERE id=?", (v['id'],))
                     st.session_state[f"p_{v['id']}"] = False; st.rerun()
@@ -166,7 +190,7 @@ with tab1:
                 it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}")
             elif res == "Não convertido":
                 mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Só olhando"], key=f"m_{v['id']}")
-            if st.button("Gravar", key=f"ff_{v['id']}", type="primary", use_container_width=True):
+            if st.button("Finalizar", key=f"ff_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, mot, vlr, it, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
