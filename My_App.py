@@ -4,26 +4,23 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS REFINADO ---
+# --- 1. CONFIGURAÇÃO E CSS (DESIGN MONDAY FINAL) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
-    
-    /* Fundo e Limpeza de Topo */
     .stApp { background-color: #F5F6F8 !important; }
     header { visibility: hidden !important; height: 0px !important; }
     .block-container { padding-top: 1rem !important; }
 
-    /* Texto Global */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
         font-weight: 600;
     }
 
-    /* CARD MONDAY UNIFICADO (Onde tudo deve ficar dentro) */
+    /* CARD UNIFICADO - TUDO FICA AQUI DENTRO */
     .monday-card-pro {
         background-color: #FFFFFF !important;
         padding: 20px;
@@ -33,7 +30,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Status Interno */
     .status-badge {
         background-color: #F0F7FF;
         color: #0073EA;
@@ -53,7 +49,7 @@ st.markdown("""
         border: 1px dashed #E44258;
     }
 
-    /* Botões Monday */
+    /* BOTÕES MONDAY AZUL GLASS */
     .stButton > button {
         border-radius: 4px !important;
         font-weight: 800 !important;
@@ -63,12 +59,28 @@ st.markdown("""
         text-transform: uppercase;
     }
 
-    /* Estilo Azul Glass para o botão principal (GRAVAR, ATENDER, etc) */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
         border: 1px solid #A2CFFF !important;
         border-left: 8px solid #0073EA !important;
+    }
+
+    .nav-container {
+        display: flex;
+        gap: 10px;
+        background-color: #FFFFFF;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #D0D4E4;
+        margin-bottom: 25px;
+    }
+    
+    .danger-box {
+        background-color: #FFF0F1 !important;
+        border: 1px solid #E44258 !important;
+        padding: 15px;
+        border-radius: 6px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -103,6 +115,7 @@ def get_min_ordem():
 # --- 3. NAVEGAÇÃO ---
 if 'pagina' not in st.session_state: st.session_state.pagina = "OPERAÇÃO"
 
+st.markdown("<div class='nav-container'>", unsafe_allow_html=True)
 c_nav1, c_nav2, c_nav3, _ = st.columns([1, 1, 1, 3])
 with c_nav1:
     if st.button("📋 OPERAÇÃO", type="primary" if st.session_state.pagina == "OPERAÇÃO" else "secondary", use_container_width=True):
@@ -113,17 +126,18 @@ with c_nav2:
 with c_nav3:
     if st.button("⚙️ CONFIGURAÇÃO", type="primary" if st.session_state.pagina == "CONFIGURAÇÃO" else "secondary", use_container_width=True):
         st.session_state.pagina = "CONFIGURAÇÃO"; st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
 
 # --- 4. CONTEÚDO ---
 if st.session_state.pagina == "OPERAÇÃO":
-    # Widgets de Meta
+    # --- DASHBOARD METAS ---
     meta_val = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{get_now().strftime('%Y-%m-%d')}%'", is_select=True)
     vendas = df_hoje[df_hoje['evento'] == 'Sucesso']
     fat_h = vendas['valor'].sum() if not vendas.empty else 0.0
-    falta = max(0, meta_val - fat_h)
     pa_h = vendas['itens'].sum() / len(vendas) if not vendas.empty else 0.0
     tm_h = fat_h / len(vendas) if not vendas.empty else 0.0
+    falta = max(0, meta_val - fat_h)
 
     st.markdown(f"""
         <div class='monday-card-pro'>
@@ -156,11 +170,8 @@ if st.session_state.pagina == "OPERAÇÃO":
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
             cl_borda = "border-left: 8px solid #00C875; background-color: #F8FFF9;" if is_1 else ""
-            
-            # TODO O CONTEÚDO (Nome + Botões) dentro de UM SÓ CARD
             st.markdown(f"<div class='monday-card-pro' style='{cl_borda}'>", unsafe_allow_html=True)
             st.markdown(f"<b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
-            
             col_b1, col_b2 = st.columns(2)
             if is_1:
                 if col_b1.button("ATENDER", key=f"at_{v['id']}", type="primary", use_container_width=True):
@@ -168,19 +179,18 @@ if st.session_state.pagina == "OPERAÇÃO":
             else:
                 if col_b1.button("FURAR", key=f"fu_{v['id']}", type="primary", use_container_width=True):
                     st.session_state[f"f_{v['id']}"] = True
-            
             if col_b2.button("SAIR", key=f"ps_{v['id']}", use_container_width=True):
                 st.session_state[f"p_{v['id']}"] = True
-
+            
             if st.session_state.get(f"f_{v['id']}", False):
-                mot_f = st.selectbox("Justificativa:", ["Cliente Voltou", "Específico", "Troca"], key=f"s_f_{v['id']}")
+                mot_f = st.selectbox("Justificativa:", ["Cliente Voltou", "Troca"], key=f"s_f_{v['id']}")
                 if st.button("Confirmar Furada", key=f"ok_f_{v['id']}", type="primary", use_container_width=True):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", mot_f, 0.0, 0, get_now().isoformat()))
-                    run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id'])); st.session_state[f"f_{v['id']}"] = False; st.rerun()
-
+                    run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
+                    st.session_state[f"f_{v['id']}"] = False; st.rerun()
             if st.session_state.get(f"p_{v['id']}", False):
                 mot_p = st.selectbox("Motivo Saída:", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
-                if st.button("Confirmar Saída", key=f"ok_p_{v['id']}", type="primary", use_container_width=True):
+                if st.button("Sair", key=f"ok_p_{v['id']}", type="primary", use_container_width=True):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Fora', ordem=0, motivo_pausa=? WHERE id=?", (mot_p, v['id']))
                     st.session_state[f"p_{v['id']}"] = False; st.rerun()
@@ -192,19 +202,17 @@ if st.session_state.pagina == "OPERAÇÃO":
             st.markdown("<div class='monday-card-pro' style='border-left: 8px solid #0073EA;'>", unsafe_allow_html=True)
             st.markdown(f"<div class='status-badge'>🚀 EM ATENDIMENTO...</div>", unsafe_allow_html=True)
             st.markdown(f"<b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
-            
             res = st.selectbox("Resultado", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
             if res == "Sucesso":
                 vlr = st.number_input("R$:", min_value=0.0, key=f"v_{v['id']}")
                 it = st.number_input("Peças:", min_value=1, step=1, key=f"i_{v['id']}")
             else:
                 mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Só olhando", "Troca"], key=f"m_{v['id']}")
-            
             if st.button("GRAVAR", key=f"ff_{v['id']}", type="primary", use_container_width=True):
-                mot_final = "Venda" if res == "Sucesso" else mot
-                val_final = vlr if res == "Sucesso" else 0.0
-                it_final = it if res == "Sucesso" else 0
-                run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, mot_final, val_final, it_final, get_now().isoformat()))
+                m_f = "Venda" if res == "Sucesso" else mot
+                v_f = vlr if res == "Sucesso" else 0.0
+                i_f = it if res == "Sucesso" else 0
+                run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, m_f, v_f, i_f, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -216,14 +224,12 @@ if st.session_state.pagina == "OPERAÇÃO":
             st.markdown(f"<div class='status-badge status-badge-pausa'>🍴 EM {m_pausa.upper()}...</div>", unsafe_allow_html=True)
             st.markdown(f"<b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
             if st.button(f"RETORNAR", key=f"ret_{v['id']}", type="primary", use_container_width=True):
-                run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Voltou", 0.0, 0, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
 elif st.session_state.pagina == "DESEMPENHO":
     st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
     st.write("### 📈 HISTÓRICO")
-    # (Mantido o código de relatório padrão)
     d_r = st.date_input("Período:", value=(date.today() - timedelta(days=7), date.today()))
     if isinstance(d_r, tuple) and len(d_r) == 2:
         df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()), is_select=True)
@@ -243,8 +249,28 @@ elif st.session_state.pagina == "CONFIGURAÇÃO":
     if st.button("SALVAR META", key="sm", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,)); st.rerun()
     st.divider()
-    st.write("#### 👤 ADICIONAR VENDEDOR")
+    st.write("#### 👤 EQUIPE")
     nn = st.text_input("NOME COMPLETO")
     if st.button("CADASTRAR", key="cad", type="primary"):
         if nn: run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0)); st.rerun()
+    
+    st.divider()
+    st.write("#### 🚨 ÁREA DE RISCO")
+    st.markdown("<div class='danger-box'>", unsafe_allow_html=True)
+    senha = st.text_input("Senha de Admin", type="password", key="pwd_risk")
+    if st.button("APAGAR TODO O HISTÓRICO", type="primary"):
+        if senha == "admin123":
+            run_db("DELETE FROM historico")
+            st.success("Histórico zerado!")
+            st.rerun()
+        else: st.error("Senha incorreta!")
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.divider()
+    st.write("#### 👥 EQUIPE ATUAL")
+    equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
+    for _, r in equipe.iterrows():
+        c1, c2 = st.columns([4,1])
+        c1.write(f"👤 **{r['nome'].upper()}**")
+        if c2.button("X", key=f"rm_{r['id']}"): run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
