@@ -5,27 +5,36 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (ESTILO MONDAY SEM ERROS) ---
+# --- 1. CONFIGURAÇÃO E CSS (REMOCÃO DEFINITIVA DE GAPS) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
     
-    /* FUNDO E CORES GLOBAIS */
+    /* 1. FUNDO E REMOÇÃO DE ESPAÇOS FANTASMAS */
     .stApp { background-color: #F5F6F8 !important; }
     
-    /* AJUSTE DO TOPO PARA NÃO COBRIR AS ABAS */
-    .block-container { padding-top: 2rem !important; }
-    header { background-color: #F5F6F8 !important; } /* Deixa o topo da mesma cor do fundo */
+    /* Remove o cabeçalho nativo e o espaço que ele ocupa */
+    header { visibility: hidden !important; height: 0px !important; margin: 0px !important; }
+    
+    /* Remove o preenchimento do container principal e de qualquer bloco vazio no topo */
+    .block-container { 
+        padding-top: 0rem !important; 
+        margin-top: -50px !important; 
+    }
+    
+    /* Esconde elementos vazios do Streamlit que geram barras brancas */
+    [data-testid="stHeader"], [data-testid="stHeader"] > div {
+        display: none !important;
+    }
 
-    /* Texto Global Forte */
+    /* 2. TEXTO E CARTÕES */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
     }
 
-    /* Cartão Estilo Monday */
     .monday-card-pro {
         background-color: #FFFFFF !important;
         padding: 22px;
@@ -35,9 +44,8 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* BOTÕES UNIFICADOS (AZUL MONDAY) */
-    /* Isso força TODOS os botões primários a serem Azuis com borda lateral */
-    div.stButton > button {
+    /* 3. BOTÕES MONDAY (AZUL GLASS) */
+    .stButton > button {
         border-radius: 4px !important;
         font-weight: 700 !important;
         height: 42px;
@@ -49,7 +57,7 @@ st.markdown("""
         color: #1E1F23 !important;
     }
 
-    /* Estilo Azul para botões com type="primary" */
+    /* Botão com type="primary" agora é Azul Glass */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
@@ -63,13 +71,13 @@ st.markdown("""
         color: #0073EA !important;
     }
 
-    /* Estilo das Abas (Mais visíveis) */
+    /* Estilo das Abas */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #FFFFFF;
-        padding: 10px;
+        padding: 5px 10px;
         border-radius: 8px;
         border: 1px solid #D0D4E4;
-        margin-bottom: 20px;
+        margin-top: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -105,7 +113,7 @@ def get_min_ordem():
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
     with st.columns([1,1,1])[1]:
-        st.markdown("<div style='margin-top:50px;' class='monday-card-pro'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:100px;' class='monday-card-pro'>", unsafe_allow_html=True)
         st.title("Acesse o Painel")
         u, p = st.text_input("Login").lower(), st.text_input("Senha", type="password")
         if st.button("Entrar", type="primary", use_container_width=True):
@@ -159,8 +167,8 @@ with tab1:
         fila = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
-            cl = "primeiro-da-vez" if is_1 else ""
-            st.markdown(f"<div class='monday-card-pro {cl}' style='padding:15px;'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
+            cl = "border-left: 8px solid #00C875; background-color: #F0FFF4;" if is_1 else ""
+            st.markdown(f"<div class='monday-card-pro' style='padding:15px; {cl}'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
             
             b_cols = st.columns([1, 1, 1])
             if is_1:
@@ -203,7 +211,7 @@ with tab1:
         for _, v in vendedores[vendedores['status'] == 'Fora'].iterrows():
             st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
             st.write(f"👤 **{v['nome'].upper()}**")
-            if st.button(f"ENTRAR NA FILA", key=f"ret_{v['id']}", type="primary", use_container_width=True):
+            if st.button(f"ENTRAR", key=f"ret_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Entrou", 0.0, 0, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
@@ -227,21 +235,18 @@ with tab3:
     st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     nm = st.number_input("Meta da Loja (R$):", value=float(meta_val))
-    if st.button("SALVAR META", key="btn_save_meta", type="primary"):
+    if st.button("SALVAR META", key="btn_meta", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,))
         st.success("Meta atualizada!")
         st.rerun()
     
     st.divider()
-    
     st.write("#### 👤 ADICIONAR VENDEDOR")
     nn = st.text_input("NOME COMPLETO", key="input_nome")
-    
-    # Botão Cadastrar agora é 100% igual aos outros e Azul
-    if st.button("CADASTRAR VENDEDOR", key="btn_cadastrar", type="primary"):
+    if st.button("CADASTRAR VENDEDOR", key="btn_cad", type="primary"):
         if nn:
             run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0))
-            st.success(f"{nn} adicionado com sucesso!")
+            st.success(f"{nn} adicionado!")
             st.rerun()
     
     st.divider()
