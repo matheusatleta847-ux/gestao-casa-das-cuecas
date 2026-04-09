@@ -5,43 +5,34 @@ from datetime import datetime, timedelta
 import io
 import plotly.express as px
 
-# --- 1. CONFIGURAÇÃO PREMIUM & UI (LAYOUT CORRIGIDO) ---
+# --- 1. CONFIGURAÇÃO PREMIUM & UI ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide", page_icon="🛍️")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #F8FAFC; }
-    
     .metric-card { 
         background: white; padding: 20px; border-radius: 12px; 
         box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
         border-top: 4px solid #1E293B; margin-bottom: 20px; 
     }
-    .metric-title { color: #64748B; font-size: 13px; font-weight: 600; text-transform: uppercase; }
     .metric-value { color: #1E293B; font-size: 28px; font-weight: 700; }
-
-    /* Estilo de Lista Vertical para evitar sobreposição */
     .vendedor-box { 
         background: white; padding: 16px; border-radius: 10px; 
         border: 1px solid #E2E8F0; margin-bottom: 12px; 
         display: flex; flex-direction: column; gap: 8px; width: 100%; 
     }
-    .primeiro-vez { border: 2px solid #22C55E; background: #F0FDF4; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15); }
-    .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; text-align: center;}
-    
-    .stButton>button { border-radius: 8px; font-weight: 600; width: 100%; transition: 0.3s; height: 40px; }
+    .primeiro-vez { border: 2px solid #22C55E; background: #F0FDF4; }
+    .stButton>button { border-radius: 8px; font-weight: 600; width: 100%; height: 40px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. FUNÇÕES DE DATA (HORA DE BRASÍLIA) ---
+# --- 2. FUNÇÕES DE SUPORTE ---
 def get_now_br_str():
-    # Ajusta UTC para Brasília (UTC-3) e formata para o Excel
-    br_time = datetime.now() - timedelta(hours=3)
-    return br_time.strftime('%d/%m/%Y %H:%M:%S')
+    return (datetime.now() - timedelta(hours=3)).strftime('%d/%m/%Y %H:%M:%S')
 
-# --- 3. MOTOR DE DADOS ---
-DB_NAME = 'gestao_elite_v17.db'
+DB_NAME = 'gestao_elite_v18.db'
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME) as conn:
@@ -61,16 +52,15 @@ def next_ordem():
         res = conn.execute("SELECT MAX(ordem) FROM usuarios").fetchone()[0]
         return (int(res) if res is not None else 0) + 1
 
-# --- 4. ACESSO ---
+# --- 3. LOGIN ---
 if 'user' not in st.session_state: st.session_state.user = None
-
 if not st.session_state.user:
-    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Painel Elite - Casa das Cuecas</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Painel Casa das Cuecas</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
         with st.form("login_form"):
             u = st.text_input("Usuário:").strip().lower()
-            p = st.text_input("Senha Admin:", type="password")
+            p = st.text_input("Senha:", type="password")
             if st.form_submit_button("Entrar"):
                 if u == "admin" and p == "admin@123":
                     st.session_state.user = {"nome": "Admin", "is_admin": True}; st.rerun()
@@ -81,7 +71,7 @@ if not st.session_state.user:
                     else: st.error("Acesso negado.")
     st.stop()
 
-# --- 5. KPIs ---
+# --- 4. KPIs ---
 dados_raw = run_db("SELECT * FROM historico", is_select=True)
 vendas_sucesso = dados_raw[dados_raw['evento'] == 'Sucesso']
 atendimentos = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
@@ -91,11 +81,11 @@ conversao = (len(vendas_sucesso) / len(atendimentos) * 100) if not atendimentos.
 pa_medio = (vendas_sucesso['itens'].sum() / len(vendas_sucesso)) if not vendas_sucesso.empty else 0
 
 k1, k2, k3 = st.columns(3)
-k1.markdown(f'<div class="metric-card"><div class="metric-title">Faturamento</div><div class="metric-value">R$ {faturamento:,.2f}</div></div>', unsafe_allow_html=True)
-k2.markdown(f'<div class="metric-card"><div class="metric-title">Conversão</div><div class="metric-value">{conversao:.1f}%</div></div>', unsafe_allow_html=True)
-k3.markdown(f'<div class="metric-card"><div class="metric-title">P.A. Médio</div><div class="metric-value">{pa_medio:.2f}</div></div>', unsafe_allow_html=True)
+k1.markdown(f'<div class="metric-card">Faturamento<br><span class="metric-value">R$ {faturamento:,.2f}</span></div>', unsafe_allow_html=True)
+k2.markdown(f'<div class="metric-card">Conversão<br><span class="metric-value">{conversao:.1f}%</span></div>', unsafe_allow_html=True)
+k3.markdown(f'<div class="metric-card">P.A. Médio<br><span class="metric-value">{pa_medio:.2f}</span></div>', unsafe_allow_html=True)
 
-# --- 6. OPERAÇÃO (LAYOUT EM LISTA VERTICAL) ---
+# --- 5. OPERAÇÃO ---
 t1, t2, t3 = st.tabs(["📋 FILA", "📊 DESEMPENHO", "⚙️ CONFIG"])
 
 with t1:
@@ -121,7 +111,7 @@ with t1:
                     if st.button("Confirmar", key=f"ok_{v['id']}"):
                         ev = "FINAL DE DIA" if mot == "Finalizar dia" else "SAÍDA (PAUSA)"
                         run_db("UPDATE usuarios SET status='Fora', motivo_pausa=? WHERE id=?", (mot, v['id']))
-                        run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, mot, get_now_br_str()))
+                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], ev, mot, 0, 0, get_now_br_str()))
                         st.session_state[f"modal_{v['id']}"] = False; st.rerun()
 
     with c_atend:
@@ -134,13 +124,21 @@ with t1:
                     st.session_state[f"f_{v['id']}"] = True
             
             if st.session_state.get(f"f_{v['id']}", False):
-                with st.expander("Resultado:", expanded=True):
+                with st.expander("Resultado do Atendimento:", expanded=True):
                     res = st.selectbox("Status:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
-                    vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
-                    it = st.number_input("Itens:", min_value=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
-                    if st.button("Salvar", key=f"sv_{v['id']}"):
+                    
+                    # Campos dinâmicos baseados na escolha
+                    if res == "Sucesso":
+                        vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}")
+                        it = st.number_input("Itens:", min_value=1, key=f"i_{v['id']}")
+                        motivo_final = "Venda"
+                    else:
+                        vlr, it = 0.0, 0
+                        motivo_final = st.selectbox("Motivo:", ["Preço", "Falta Tamanho", "Só olhando", "Falta Cor", "Troca"], key=f"m_{v['id']}")
+
+                    if st.button("Salvar Registro", key=f"sv_{v['id']}"):
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
-                               (v['nome'], res, "Venda", vlr, it, get_now_br_str()))
+                               (v['nome'], res, motivo_final, vlr, it, get_now_br_str()))
                         run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (next_ordem(), v['id']))
                         st.session_state[f"f_{v['id']}"] = False; st.rerun()
 
@@ -148,12 +146,11 @@ with t1:
         st.subheader("💤 Fora da Loja")
         fora = vendedores[vendedores['status'] == 'Fora']
         for _, v in fora.iterrows():
-            # Container individual para evitar sobreposição
             with st.container():
                 st.markdown(f"<div class='vendedor-box' style='border-left:5px solid #64748B;'><b>{v['nome']}</b><br><small>Status: {v['motivo_pausa']}</small></div>", unsafe_allow_html=True)
                 if st.button(f"Retornar: {v['nome']}", key=f"ret_{v['id']}"):
                     ev = "INÍCIO DE DIA" if v['motivo_pausa'] in ["Finalizar dia", None] else "RETORNO (PAUSA)"
-                    run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev, v['motivo_pausa'], get_now_br_str()))
+                    run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], ev, v['motivo_pausa'], 0, 0, get_now_br_str()))
                     run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (next_ordem(), v['id']))
                     st.rerun()
 
@@ -171,26 +168,25 @@ with t2:
         st.divider()
         buffer = io.BytesIO()
         df_exp = dados_raw.sort_values(by='id', ascending=False)
-        df_exp.columns = ['ID', 'Vendedor', 'Evento', 'Detalhe', 'Valor (R$)', 'Itens', 'Data/Hora (Brasília)']
+        df_exp.columns = ['ID', 'Vendedor', 'Evento', 'Detalhe', 'Valor (R$)', 'Itens', 'Data/Hora']
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_exp.to_excel(writer, index=False, sheet_name='Logs')
-        st.download_button("📥 Baixar Excel Completo", data=buffer.getvalue(), file_name="Relatorio_Casa_Cuecas.xlsx")
+        st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name="Relatorio_Casa_Cuecas.xlsx")
 
 with t3:
     if st.session_state.user['is_admin']:
         st.subheader("⚙️ Gestão de Equipe")
-        with st.container(border=True):
-            nome_n = st.text_input("Nome do Vendedor:")
-            if st.button("Cadastrar"):
-                if nome_n:
-                    log_n = nome_n.lower().replace(" ", ".")
-                    try:
-                        run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nome_n.title(), log_n, 'Fora', 0))
-                        st.rerun()
-                    except: st.error("Login já existe.")
+        nome_n = st.text_input("Nome do Vendedor:")
+        if st.button("Cadastrar"):
+            if nome_n:
+                log_n = nome_n.lower().replace(" ", ".")
+                try:
+                    run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nome_n.title(), log_n, 'Fora', 0))
+                    st.rerun()
+                except: st.error("Login já existe.")
         equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
         for _, r in equipe.iterrows():
-            c_n, c_e = st.columns([4, 1])
-            c_n.write(f"👤 **{r['nome']}**")
-            if c_e.button("Remover", key=f"del_{r['id']}"):
+            cn, ce = st.columns([4, 1])
+            cn.write(f"👤 **{r['nome']}**")
+            if ce.button("Remover", key=f"del_{r['id']}"):
                 run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
