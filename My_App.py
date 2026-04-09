@@ -5,36 +5,30 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (REMOCÃO DEFINITIVA DE GAPS) ---
+# --- 1. CONFIGURAÇÃO E CSS (DESIGN ESTÁVEL MONDAY) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
     
-    /* 1. FUNDO E REMOÇÃO DE ESPAÇOS FANTASMAS */
+    /* FUNDO PRINCIPAL */
     .stApp { background-color: #F5F6F8 !important; }
     
-    /* Remove o cabeçalho nativo e o espaço que ele ocupa */
-    header { visibility: hidden !important; height: 0px !important; margin: 0px !important; }
+    /* REMOÇÃO DEFINITIVA DO GAP BRANCO SEM SUBIR DEMAIS */
+    header { visibility: hidden !important; height: 0px !important; }
+    .block-container { padding-top: 1rem !important; }
     
-    /* Remove o preenchimento do container principal e de qualquer bloco vazio no topo */
-    .block-container { 
-        padding-top: 0rem !important; 
-        margin-top: -50px !important; 
-    }
-    
-    /* Esconde elementos vazios do Streamlit que geram barras brancas */
-    [data-testid="stHeader"], [data-testid="stHeader"] > div {
-        display: none !important;
-    }
+    /* Remove o espaço interno que o Streamlit cria entre as abas e o conteúdo */
+    [data-testid="stVerticalBlock"] > div:first-child { margin-top: 0px !important; padding-top: 0px !important; }
 
-    /* 2. TEXTO E CARTÕES */
+    /* TEXTO GLOBAL FORTE */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
     }
 
+    /* CARTÃO ESTILO MONDAY */
     .monday-card-pro {
         background-color: #FFFFFF !important;
         padding: 22px;
@@ -44,7 +38,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* 3. BOTÕES MONDAY (AZUL GLASS) */
+    /* BOTÕES UNIFICADOS (AZUL GLASS) */
     .stButton > button {
         border-radius: 4px !important;
         font-weight: 700 !important;
@@ -57,7 +51,7 @@ st.markdown("""
         color: #1E1F23 !important;
     }
 
-    /* Botão com type="primary" agora é Azul Glass */
+    /* Estilo Azul para botões primários */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
@@ -68,16 +62,25 @@ st.markdown("""
     .stButton > button[kind="primary"]:hover {
         background-color: #D1E9FF !important;
         border-color: #0073EA !important;
-        color: #0073EA !important;
     }
 
-    /* Estilo das Abas */
+    /* ESTILO DAS ABAS (TABS) - VISÍVEIS E LIMPAS */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #FFFFFF;
-        padding: 5px 10px;
+        padding: 8px 12px;
         border-radius: 8px;
         border: 1px solid #D0D4E4;
-        margin-top: 10px;
+        gap: 15px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        white-space: pre;
+        color: #676879 !important;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #0073EA !important;
+        border-bottom: 2px solid #0073EA !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -113,7 +116,7 @@ def get_min_ordem():
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
     with st.columns([1,1,1])[1]:
-        st.markdown("<div style='margin-top:100px;' class='monday-card-pro'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:50px;' class='monday-card-pro'>", unsafe_allow_html=True)
         st.title("Acesse o Painel")
         u, p = st.text_input("Login").lower(), st.text_input("Senha", type="password")
         if st.button("Entrar", type="primary", use_container_width=True):
@@ -129,7 +132,8 @@ tab1, tab2, tab3 = st.tabs(["📋 OPERAÇÃO", "📊 DESEMPENHO", "⚙️ CONFIG
 
 with tab1:
     meta_val = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
-    df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{get_now().strftime('%Y-%m-%d')}%'", is_select=True)
+    hoje_dt = get_now().strftime('%Y-%m-%d')
+    df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
     
     vendas_sucesso = df_hoje[df_hoje['evento'] == 'Sucesso']
     fat_h = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0.0
@@ -216,37 +220,22 @@ with tab1:
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-with tab2:
-    st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
-    st.write("### 📈 DESEMPENHO")
-    d_r = st.date_input("Filtrar Período:", value=(date.today() - timedelta(days=7), date.today()))
-    if isinstance(d_r, tuple) and len(d_r) == 2:
-        df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()), is_select=True)
-        if not df_f.empty:
-            df_ed = st.data_editor(df_f, use_container_width=True, hide_index=True)
-            if st.button("SALVAR ALTERAÇÕES", type="primary"):
-                run_db("DELETE FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()))
-                for _, r in df_ed.iterrows():
-                    run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (r['vendedor'], r['evento'], r['motivo'], r['valor'], r['itens'], r['data']))
-                st.success("Dados atualizados!"); st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
 with tab3:
     st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     nm = st.number_input("Meta da Loja (R$):", value=float(meta_val))
-    if st.button("SALVAR META", key="btn_meta", type="primary"):
+    if st.button("SALVAR META", key="btn_meta_fix", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,))
-        st.success("Meta atualizada!")
+        st.success("Meta salva com sucesso!")
         st.rerun()
     
     st.divider()
     st.write("#### 👤 ADICIONAR VENDEDOR")
-    nn = st.text_input("NOME COMPLETO", key="input_nome")
-    if st.button("CADASTRAR VENDEDOR", key="btn_cad", type="primary"):
+    nn = st.text_input("NOME COMPLETO", key="name_input_fix")
+    if st.button("CADASTRAR VENDEDOR", key="btn_cad_fix", type="primary"):
         if nn:
             run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0))
-            st.success(f"{nn} adicionado!")
+            st.success(f"{nn} cadastrado!")
             st.rerun()
     
     st.divider()
