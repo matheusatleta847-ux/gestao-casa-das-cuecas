@@ -5,21 +5,20 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (DESIGN MONDAY.COM PURO) ---
+# --- 1. CONFIGURAÇÃO E CSS (DESIGN MONDAY.COM SEM GAPS) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
     
-    /* Fundo Principal e Remoção de Espaços Fantasmas */
+    /* REMOÇÃO TOTAL DE ESPAÇOS NO TOPO */
     .stApp { background-color: #F5F6F8 !important; }
-    .block-container { padding-top: 0rem !important; margin-top: -30px; }
-    
-    /* Esconde barra de cabeçalho vazia do Streamlit */
-    header { visibility: hidden; height: 0px; }
+    .block-container { padding-top: 0rem !important; margin-top: -60px !important; }
+    header { visibility: hidden !important; height: 0px !important; }
+    footer { visibility: hidden !important; }
 
-    /* Texto Global */
+    /* Texto Global Forte */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
@@ -35,13 +34,9 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Indicadores de Performance */
-    .metric-box { text-align: center; border-right: 1px solid #E6E9EF; }
-    .val-faturamento { font-size: 30px; font-weight: 800; color: #0073EA; }
-    .val-indicador { font-size: 22px; font-weight: 800; color: #323338; }
-
-    /* --- ESTILO DOS BOTÕES AZUL GLASS (IDENTIDADE VISUAL) --- */
-    .stButton > button {
+    /* --- BOTÕES AZUL GLASS (IDENTIDADE VISUAL UNIFICADA) --- */
+    /* Forçando a cor azul em QUALQUER botão que use o parâmetro type="primary" */
+    div.stButton > button:first-child, .stButton > button {
         border-radius: 4px !important;
         font-weight: 700 !important;
         height: 42px;
@@ -50,29 +45,24 @@ st.markdown("""
         transition: all 0.2s;
         text-transform: uppercase;
         font-size: 13px;
+        color: #1E1F23 !important;
     }
 
-    /* Botão Primário (Salvar, Cadastrar, Atender, Confirmar) */
+    /* Estilo Azul para botões primários (Atender, Salvar, Cadastrar) */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
         border: 1px solid #A2CFFF !important;
-        border-left: 8px solid #0073EA !important; /* Destaque lateral azul */
+        border-left: 8px solid #0073EA !important;
     }
     
     .stButton > button[kind="primary"]:hover {
         background-color: #D1E9FF !important;
         border-color: #0073EA !important;
+        color: #0073EA !important;
     }
 
-    /* Vendedor na Fila */
-    .vendedor-item-pro {
-        padding: 14px 18px;
-        border-radius: 6px;
-        margin-bottom: 10px;
-        background-color: #FFFFFF !important;
-        border: 1px solid #BDC1D1;
-    }
+    /* Destaque da Fila */
     .primeiro-da-vez { 
         border-left: 8px solid #00C875 !important; 
         background-color: #F0FFF4 !important; 
@@ -111,11 +101,13 @@ def get_min_ordem():
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
     with st.columns([1,1,1])[1]:
-        st.markdown("<div style='margin-top:100px;' class='monday-card-pro'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:150px;' class='monday-card-pro'>", unsafe_allow_html=True)
         st.title("Acesse o Painel")
         u, p = st.text_input("Login").lower(), st.text_input("Senha", type="password")
         if st.button("Entrar", type="primary", use_container_width=True):
-            if u == "admin" and p == "admin123": st.session_state.user = {"nome":"Admin", "role":"admin"}; st.rerun()
+            if u == "admin" and p == "admin123": 
+                st.session_state.user = {"nome":"Admin", "role":"admin"}
+                st.rerun()
             else: st.error("Dados incorretos.")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
@@ -135,18 +127,18 @@ with tab1:
     st.markdown(f"""
         <div class='monday-card-pro'>
             <div style='display: flex; justify-content: space-around; align-items: center;'>
-                <div class='metric-box' style='flex: 2;'>
+                <div style='text-align: center; border-right: 1px solid #E6E9EF; flex: 2;'>
                     <div style='font-weight:700; color:#676879; font-size:12px; text-transform:uppercase;'>🎯 Faturamento Hoje</div>
-                    <div class='val-faturamento'>R$ {fat_h:,.2f}</div>
+                    <div style='font-size: 30px; font-weight: 800; color: #0073EA;'>R$ {fat_h:,.2f}</div>
                     <div style='font-size: 14px; font-weight:700; color:#E44258;'>Falta: R$ {falta_meta:,.2f}</div>
                 </div>
-                <div class='metric-box' style='flex: 1;'>
+                <div style='text-align: center; border-right: 1px solid #E6E9EF; flex: 1;'>
                     <div style='font-weight:700; color:#676879; font-size:12px; text-transform:uppercase;'>📦 P.A.</div>
-                    <div class='val-indicador'>{pa_hoje:.2f}</div>
+                    <div style='font-size: 22px; font-weight: 800;'>{pa_hoje:.2f}</div>
                 </div>
-                <div class='metric-box' style='flex: 1;'>
+                <div style='text-align: center; flex: 1;'>
                     <div style='font-weight:700; color:#676879; font-size:12px; text-transform:uppercase;'>🎫 Ticket Médio</div>
-                    <div class='val-indicador'>R$ {tm_hoje:,.0f}</div>
+                    <div style='font-size: 22px; font-weight: 800;'>R$ {tm_hoje:,.0f}</div>
                 </div>
             </div>
         </div>
@@ -162,8 +154,8 @@ with tab1:
         fila = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
-            cl = "vendedor-item-pro primeiro-da-vez" if is_1 else "vendedor-item-pro"
-            st.markdown(f"<div class='{cl}'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
+            cl = "primeiro-da-vez" if is_1 else ""
+            st.markdown(f"<div class='monday-card-pro {cl}' style='padding:15px;'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
             
             b_cols = st.columns([1, 1, 1])
             if is_1:
@@ -182,13 +174,6 @@ with tab1:
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", mot_f, 0.0, 0, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                     st.session_state[f"f_{v['id']}"] = False; st.rerun()
-
-            if st.session_state.get(f"p_{v['id']}", False):
-                mot_p = st.selectbox("Motivo?", ["Almoço", "Banheiro", "Café"], key=f"s_p_{v['id']}")
-                if st.button("Confirmar Saída", key=f"ok_p_{v['id']}", type="primary"):
-                    run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
-                    run_db("UPDATE usuarios SET status='Fora', ordem=0 WHERE id=?", (v['id'],))
-                    st.session_state[f"p_{v['id']}"] = False; st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
     with c_a:
@@ -219,28 +204,32 @@ with tab1:
             st.markdown("</div>", unsafe_allow_html=True)
 
 with tab3:
-    st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
+    st.markdown("<div class='monday-card-pro' style='margin-top:20px;'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     nm = st.number_input("Meta da Loja (R$):", value=float(meta_val))
     if st.button("SALVAR META", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,))
+        st.success("Meta atualizada com sucesso!")
         st.rerun()
     st.divider()
     
-    # --- BOTÃO CADASTRAR REFORMULADO ---
-    with st.form("add_v"):
-        st.write("#### 👤 ADICIONAR VENDEDOR")
-        nn = st.text_input("NOME COMPLETO")
-        if st.form_submit_button("CADASTRAR", type="primary"):
-            if nn:
-                run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0))
-                st.rerun()
+    st.write("#### 👤 ADICIONAR VENDEDOR")
+    nn = st.text_input("NOME COMPLETO", key="novo_nome")
+    # BOTÃO CADASTRAR AZUL (Removido st.form para evitar o botão vermelho nativo)
+    if st.button("CADASTRAR VENDEDOR", type="primary"):
+        if nn:
+            run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0))
+            st.success(f"{nn} adicionado!")
+            st.rerun()
+        else:
+            st.warning("Insira um nome.")
     
+    st.divider()
     st.write("#### 👥 EQUIPE ATUAL")
     equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
     for _, r in equipe.iterrows():
         c1, c2 = st.columns([4,1])
         c1.write(f"👤 **{r['nome'].upper()}**")
-        if c2.button("REMOVER", key=f"rm_{r['id']}"):
+        if c2.button("X", key=f"rm_{r['id']}"):
             run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
