@@ -22,7 +22,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. ENGINE DE DADOS ---
-DB_NAME = 'sistema_elite_v50.db'
+DB_NAME = 'sistema_elite_v51.db'
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME, check_same_thread=False) as conn:
@@ -59,7 +59,7 @@ if not st.session_state.user:
             else: st.error("Acesso negado")
     st.stop()
 
-tab1, tab2, tab3 = st.tabs(["🛒 Operação", "📈 Desempenho", "⚙️ Configurações"])
+tab1, tab2, tab3 = st.tabs(["🛒 OPERAÇÃO", "📈 DESEMPENHO", "⚙️ CONFIGURAÇÕES"])
 
 with tab1:
     meta_loja = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
@@ -68,20 +68,6 @@ with tab1:
     fat_h = df_hoje[df_hoje['evento']=='Sucesso']['valor'].sum() if not df_hoje.empty else 0
     
     st.markdown(f"<div class='meta-container'><h3>🎯 Meta: R$ {meta_loja:,.2f} | Realizado: R$ {fat_h:,.2f}</h3></div>", unsafe_allow_html=True)
-    
-    # --- BOTÕES DE ABERTURA E FECHAMENTO DE DIA ---
-    c_dia1, c_dia2 = st.columns(2)
-    if c_dia1.button("☀️ Iniciar Dia (Abertura)", use_container_width=True):
-        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
-               ("SISTEMA", "Abertura", "Início do Expediente", 0.0, 0, get_now().isoformat()))
-        st.success("Dia iniciado e registrado!"); st.rerun()
-        
-    if c_dia2.button("🌙 Encerrar Dia (Fechamento)", use_container_width=True):
-        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
-               ("SISTEMA", "Fechamento", f"Faturamento Final: R$ {fat_h:.2f}", fat_h, 0, get_now().isoformat()))
-        run_db("UPDATE usuarios SET status='Pausa'")
-        st.warning("Dia encerrado e faturamento gravado!"); st.rerun()
-
     st.progress(min(fat_h/meta_loja, 1.0) if meta_loja > 0 else 0.0)
 
     st.divider()
@@ -91,6 +77,8 @@ with tab1:
     with col_f:
         st.write("### ⏳ Fila de Vez")
         fila = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
+        if fila.empty:
+            st.info("Ninguém na fila. Atendentes precisam entrar na loja.")
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
             cl = "vendedor-box primeiro" if is_1 else "vendedor-box"
@@ -104,21 +92,23 @@ with tab1:
                     if b_cols[0].button("⚡ FURAR", key=f"fu_{v['id']}"):
                         st.session_state[f"fura_{v['id']}"] = True
                 
-                if b_cols[1].button("☕ PAUSA", key=f"ps_{v['id']}"):
+                if b_cols[1].button("☕ SAIR", key=f"ps_{v['id']}"):
                     st.session_state[f"pausa_{v['id']}"] = True
 
+                # Lógica de Fura-Fila
                 if st.session_state.get(f"fura_{v['id']}", False):
-                    mot_f = st.selectbox("Motivo:", ["Cliente Voltou", "Atendimento Específico", "Finalização", "Troca", "Outros"], key=f"sel_f_{v['id']}")
+                    mot_f = st.selectbox("Motivo:", ["Cliente Voltou", "Específico", "Finalização", "Troca"], key=f"sel_f_{v['id']}")
                     if st.button("Confirmar Furada", key=f"ok_f_{v['id']}"):
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", mot_f, 0.0, 0, get_now().isoformat()))
                         run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                         st.session_state[f"fura_{v['id']}"] = False; st.rerun()
 
+                # Lógica de Saída/Pausa
                 if st.session_state.get(f"pausa_{v['id']}", False):
-                    mot_p = st.selectbox("Motivo Pausa:", ["Almoço", "Feedback", "Banheiro", "Café", "Outros"], key=f"sel_p_{v['id']}")
-                    if st.button("Confirmar Pausa", key=f"ok_p_{v['id']}"):
-                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Pausa", mot_p, 0.0, 0, get_now().isoformat()))
-                        run_db("UPDATE usuarios SET status='Pausa', ordem=0 WHERE id=?", (v['id'],))
+                    mot_p = st.selectbox("Motivo Saída:", ["Almoço", "Feedback", "Banheiro", "Café", "Fim de Turno"], key=f"sel_p_{v['id']}")
+                    if st.button("Confirmar Saída", key=f"ok_p_{v['id']}"):
+                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Saída", mot_p, 0.0, 0, get_now().isoformat()))
+                        run_db("UPDATE usuarios SET status='Fora', ordem=0 WHERE id=?", (v['id'],))
                         st.session_state[f"pausa_{v['id']}"] = False; st.rerun()
 
     with col_a:
@@ -129,23 +119,25 @@ with tab1:
                 res = st.selectbox("Resultado", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
                 vlr, it, mot = 0.0, 0, res
                 if res == "Sucesso":
-                    vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}")
+                    vlr = st.number_input("R$:", min_value=0.0, key=f"v_{v['id']}")
                     it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}")
                 elif res == "Não convertido":
                     mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Cor", "Só olhando"], key=f"m_{v['id']}")
-                if st.button("Gravar", key=f"ff_{v['id']}", type="primary"):
+                if st.button("Gravar Atendimento", key=f"ff_{v['id']}", type="primary"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, mot, vlr, it, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
 
     with col_p:
-        st.write("### ☕ Pausados")
-        for _, v in vendedores[vendedores['status'] == 'Pausa'].iterrows():
-            st.warning(f"👤 {v['nome']}")
-            if st.button(f"Retornar: {v['nome']}", key=f"ret_{v['id']}"):
+        st.write("### 💤 Fora da Loja")
+        # Aqui ficam todos que iniciam o dia ou saíram da fila
+        for _, v in vendedores[vendedores['status'] == 'Fora'].iterrows():
+            st.markdown(f"<div class='vendedor-box'>💤 <b>{v['nome']}</b></div>", unsafe_allow_html=True)
+            if st.button(f"Entrar na Fila: {v['nome']}", key=f"ret_{v['id']}"):
+                run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Entrou na Loja", 0.0, 0, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
 
 with tab2:
-    st.write("### 📊 Relatórios")
+    st.write("### 📊 Gestão de Resultados")
     d_r = st.date_input("Filtrar Período:", value=(date.today() - timedelta(days=7), date.today()))
     if isinstance(d_r, tuple) and len(d_r) == 2:
         df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()), is_select=True)
@@ -158,16 +150,17 @@ with tab2:
                 st.success("Sincronizado!"); st.rerun()
             towrite = io.BytesIO()
             df_f.to_excel(towrite, index=False, engine='xlsxwriter')
-            st.download_button("📥 Baixar Excel", data=towrite.getvalue(), file_name="relatorio_cuecas.xlsx")
+            st.download_button("📥 Baixar Excel", data=towrite.getvalue(), file_name="relatorio_final.xlsx")
 
 with tab3:
-    n_meta = st.number_input("Nova Meta Diária:", value=float(meta_loja))
+    n_meta = st.number_input("Meta Diária:", value=float(meta_loja))
     if st.button("Salvar Meta"): run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (n_meta,)); st.rerun()
     st.divider()
     with st.form("add_v"):
         nn = st.text_input("Novo Vendedor")
         if st.form_submit_button("Cadastrar"):
-            run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Esperando', get_max_ordem())); st.rerun()
+            # Vendedor já inicia com status 'Fora'
+            run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0)); st.rerun()
     for _, r in run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True).iterrows():
         c1, c2 = st.columns([4,1])
         c1.write(f"👤 {r['nome']}")
