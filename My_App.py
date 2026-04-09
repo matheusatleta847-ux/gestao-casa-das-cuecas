@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 import io
 import plotly.express as px
 
@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. MOTOR DE DADOS ---
-DB_NAME = 'banco_cuecas_v33.db'
+DB_NAME = 'banco_cuecas_v34.db'
 
 def get_now_br():
     return datetime.utcnow() - timedelta(hours=3)
@@ -140,9 +140,8 @@ with t1:
                 run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (get_next_ordem(), v['id'])); st.rerun()
 
 with t2:
-    st.subheader("📅 Relatórios e Gestão de Lançamentos")
+    st.subheader("📅 Relatórios e Gestão")
     
-    # Adicionar Venda Manual (Retroativa)
     if st.session_state.user['is_admin']:
         with st.expander("➕ LANÇAR VENDA MANUAL (RETROATIVA)"):
             col_m1, col_m2, col_m3 = st.columns(3)
@@ -154,32 +153,30 @@ with t2:
             it_m = st.number_input("Qtd Itens:", min_value=1, step=1) if res_m == "Sucesso" else 0
             
             if st.button("Gravar Venda Manual"):
-                # Hora padrão 12:00 para vendas manuais
-                data_f = datetime.combine(data_m, datetime.min.time() + timedelta(hours=12)).isoformat()
+                # CORREÇÃO DO ERRO: Combinamos a data com a hora de forma segura
+                data_f = datetime.combine(data_m, time(12, 0)).isoformat()
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (vend_m, res_m, res_m, val_m, it_m, data_f))
                 st.success("Venda gravada!"); st.rerun()
 
     st.divider()
-    data_sel = st.date_input("Período de Análise:", value=(date.today() - timedelta(days=7), date.today()))
+    data_sel = st.date_input("Período:", value=(date.today() - timedelta(days=7), date.today()))
     
     if isinstance(data_sel, tuple) and len(data_sel) == 2:
         ini, fim = data_sel
         df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ? ORDER BY data DESC", (ini.isoformat(), fim.isoformat()), is_select=True)
-        metricas_card(df_f)
-        
-        st.plotly_chart(px.bar(df_f[df_f['evento']=='Sucesso'].groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', title="Vendas no Período", template="seaborn", color='valor'), use_container_width=True)
+        if not df_f.empty:
+            metricas_card(df_f)
+            st.plotly_chart(px.bar(df_f[df_f['evento']=='Sucesso'].groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', title="Vendas no Período", color='valor'), use_container_width=True)
 
-        if st.session_state.user['is_admin']:
-            st.markdown("### 📝 Editor de Histórico")
-            st.caption("Para DELETAR: Selecione a linha e aperte 'Delete'. Para ADICIONAR: Use o '+' no final da tabela.")
-            edt = st.data_editor(df_f, hide_index=True, use_container_width=True, num_rows="dynamic")
-            
-            if st.button("💾 SALVAR ALTERAÇÕES (Sincronizar Banco)"):
-                # Deleta o período atual e reinsere o que está no editor
-                run_db("DELETE FROM historico WHERE date(data) BETWEEN ? AND ?", (ini.isoformat(), fim.isoformat()))
-                for _, r in edt.iterrows():
-                    run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (r['vendedor'], r['evento'], r['motivo'], r['valor'], r['itens'], r['data']))
-                st.success("Dados Sincronizados!"); st.rerun()
+            if st.session_state.user['is_admin']:
+                st.markdown("### 📝 Editor de Histórico")
+                edt = st.data_editor(df_f, hide_index=True, use_container_width=True, num_rows="dynamic")
+                if st.button("💾 SALVAR ALTERAÇÕES"):
+                    run_db("DELETE FROM historico WHERE date(data) BETWEEN ? AND ?", (ini.isoformat(), fim.isoformat()))
+                    for _, r in edt.iterrows():
+                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (r['vendedor'], r['evento'], r['motivo'], r['valor'], r['itens'], r['data']))
+                    st.success("Sincronizado!"); st.rerun()
+        else: st.info("Sem dados.")
 
 with t3:
     if st.session_state.user['is_admin']:
