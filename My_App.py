@@ -34,7 +34,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. MOTOR DE DADOS ---
-DB_NAME = 'gestao_elite_v14.db'
+DB_NAME = 'gestao_elite_v15.db'
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME) as conn:
@@ -49,7 +49,13 @@ def init_db():
 
 init_db()
 
-# --- 3. CONTROLE DE ACESSO ---
+# --- 3. FUNÇÃO DE FILA (CORRIGIDA PARA EVITAR TYPEERROR) ---
+def next_ordem():
+    with sqlite3.connect(DB_NAME) as conn:
+        res = conn.execute("SELECT MAX(ordem) FROM usuarios").fetchone()[0]
+        return (int(res) if res is not None else 0) + 1
+
+# --- 4. CONTROLE DE ACESSO ---
 if 'user' not in st.session_state: st.session_state.user = None
 
 if not st.session_state.user:
@@ -61,26 +67,23 @@ if not st.session_state.user:
             p = st.text_input("Password Admin:", type="password")
             if st.form_submit_button("Entrar no Sistema"):
                 if u == "admin" and p == "admin@123":
-                    st.session_state.user = {"nome": "Administrador", "is_admin": True}
-                    st.rerun()
+                    st.session_state.user = {"nome": "Administrador", "is_admin": True}; st.rerun()
                 else:
                     res = run_db("SELECT * FROM usuarios WHERE login = ?", (u,), True)
                     if not res.empty:
-                        st.session_state.user = {"nome": res.iloc[0]['nome'], "is_admin": False}
-                        st.rerun()
-                    else: st.error("Acesso negado. Verifique os dados.")
+                        st.session_state.user = {"nome": res.iloc[0]['nome'], "is_admin": False}; st.rerun()
+                    else: st.error("Acesso negado.")
     st.stop()
 
-# --- 4. INTELIGÊNCIA DE NEGÓCIO (KPIs) ---
+# --- 5. KPIs DE INTELIGÊNCIA ---
 dados_raw = run_db("SELECT * FROM historico WHERE data >= ?", 
                    ((datetime.now() - timedelta(days=30)).isoformat(),), True)
 
-# Filtros estratégicos
 vendas_sucesso = dados_raw[dados_raw['evento'] == 'Sucesso']
-atendimentos_totais = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
+atendimentos_reais = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
 
 faturamento = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0
-conversao = (len(vendas_sucesso) / len(atendimentos_totais) * 100) if not atendimentos_totais.empty else 0
+conversao = (len(vendas_sucesso) / len(atendimentos_reais) * 100) if not atendimentos_reais.empty else 0
 pa_medio = (vendas_sucesso['itens'].sum() / len(vendas_sucesso)) if not vendas_sucesso.empty else 0
 ticket_medio = (faturamento / len(vendas_sucesso)) if not vendas_sucesso.empty else 0
 
@@ -90,19 +93,15 @@ k2.markdown(f'<div class="metric-card"><div class="metric-title">Conversão</div
 k3.markdown(f'<div class="metric-card"><div class="metric-title">P.A. (Itens)</div><div class="metric-value">{pa_medio:.2f}</div></div>', unsafe_allow_html=True)
 k4.markdown(f'<div class="metric-card"><div class="metric-title">Ticket Médio</div><div class="metric-value">R$ {ticket_medio:,.2f}</div></div>', unsafe_allow_html=True)
 
-# --- 5. INTERFACE OPERACIONAL ---
-t1, t2, t3 = st.tabs(["📋 FILA DE ATENDIMENTO", "📊 DASHBOARDS & EXPORT", "⚙️ CONFIGURAÇÕES"])
+# --- 6. INTERFACE OPERACIONAL ---
+t1, t2, t3 = st.tabs(["📋 FILA DA VEZ", "📊 DASHBOARDS", "⚙️ CONFIGURAÇÕES"])
 
 with t1:
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
     c_esp, c_atend, c_fora = st.columns(3)
 
-    def next_ordem():
-        res = run_db("SELECT MAX(ordem) FROM usuarios", is_select=True)
-        return (res.iloc[0,0] if res.iloc[0,0] is not None else 0) + 1
-
     with c_esp:
-        st.subheader("⏳ Próximos da Vez")
+        st.subheader("⏳ Na Fila")
         esp = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for i, v in esp.iterrows():
             is_primeiro = (i == 0)
@@ -117,16 +116,16 @@ with t1:
                 st.session_state[f"m_p_{v['id']}"] = True
 
             if st.session_state.get(f"m_p_{v['id']}", False):
-                with st.expander("Justificar Saída:", expanded=True):
-                    mot = st.selectbox("Motivo:", ["Almoço", "Banheiro", "Lanche", "Finalizar dia", "Externo"], key=f"sel_{v['id']}")
-                    if st.button("Confirmar Saída", key=f"ok_{v['id']}"):
+                with st.expander("Motivo:", expanded=True):
+                    mot = st.selectbox("Justificativa:", ["Almoço", "Banheiro", "Lanche", "Finalizar dia", "Externo"], key=f"sel_{v['id']}")
+                    if st.button("Confirmar", key=f"ok_{v['id']}"):
                         ev_log = "FINAL DE DIA" if mot == "Finalizar dia" else "SAÍDA (PAUSA)"
                         run_db("UPDATE usuarios SET status='Fora', motivo_pausa=? WHERE id=?", (mot, v['id']))
                         run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev_log, mot, datetime.now().isoformat()))
                         st.session_state[f"m_p_{v['id']}"] = False; st.rerun()
 
     with c_atend:
-        st.subheader("🚀 Em Atendimento")
+        st.subheader("🚀 Atendendo")
         atend = vendedores[vendedores['status'] == 'Atendendo']
         for _, v in atend.iterrows():
             with st.container(border=True):
@@ -135,17 +134,17 @@ with t1:
                     st.session_state[f"f_{v['id']}"] = True
             
             if st.session_state.get(f"f_{v['id']}", False):
-                with st.expander("Resultado do Atendimento:", expanded=True):
+                with st.expander("Resultado:", expanded=True):
                     res = st.selectbox("Status:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
                     if res == "Sucesso":
-                        vlr = st.number_input("Valor total da venda (R$):", min_value=0.0, step=10.0)
-                        itens = st.number_input("Quantidade de itens (P.A.):", min_value=1, step=1)
-                        motivo_perda = None
+                        vlr = st.number_input("Valor total (R$):", min_value=0.0)
+                        itens = st.number_input("Itens (P.A.):", min_value=1)
+                        motivo_perda = "Venda Realizada"
                     else:
                         vlr, itens = 0.0, 0
-                        motivo_perda = st.selectbox("Motivo da perda:", ["Preço", "Falta de Tamanho", "Só olhando", "Falta de Cor", "Troca sem compra"])
+                        motivo_perda = st.selectbox("Motivo perda:", ["Preço", "Falta Tamanho", "Só olhando", "Falta Cor", "Troca"])
 
-                    if st.button("Gravar no Sistema", key=f"sv_{v['id']}"):
+                    if st.button("Gravar", key=f"sv_{v['id']}"):
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
                                (v['nome'], res, motivo_perda, vlr, itens, datetime.now().isoformat()))
                         run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (next_ordem(), v['id']))
@@ -155,79 +154,63 @@ with t1:
         st.subheader("💤 Fora da Loja")
         fora = vendedores[vendedores['status'] == 'Fora']
         for _, v in fora.iterrows():
-            st.markdown(f"<div class='vendedor-box' style='border-left:5px solid #64748B;'><b>{v['nome']}</b><br><small>Status: {v['motivo_pausa']}</small></div>", unsafe_allow_html=True)
-            if st.button(f"Entrar / Retornar: {v['nome']}", key=f"ret_{v['id']}"):
-                ev_log = "INÍCIO DE DIA" if v['motivo_pausa'] in ["Finalizar dia", None] else "RETORNO (PAUSA)"
-                run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev_log, v['motivo_pausa'], datetime.now().isoformat()))
-                run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (next_ordem(), v['id']))
-                st.rerun()
+            with st.container():
+                st.markdown(f"<div class='vendedor-box' style='border-left:5px solid #64748B;'><b>{v['nome']}</b><br><small>Status: {v['motivo_pausa']}</small></div>", unsafe_allow_html=True)
+                if st.button(f"Entrar / Retornar: {v['nome']}", key=f"ret_{v['id']}"):
+                    ev_log = "INÍCIO DE DIA" if v['motivo_pausa'] in ["Finalizar dia", None] else "RETORNO (PAUSA)"
+                    run_db("INSERT INTO historico (vendedor, evento, motivo, data) VALUES (?,?,?,?)", (v['nome'], ev_log, v['motivo_pausa'], datetime.now().isoformat()))
+                    run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (next_ordem(), v['id']))
+                    st.rerun()
 
 with t2:
-    st.subheader("📊 Inteligência de Dados")
-    if not atendimentos_totais.empty:
+    st.subheader("📊 Dashboards Interativos")
+    if not atendimentos_reais.empty:
         col_g1, col_g2 = st.columns(2)
-        
         with col_g1:
-            # Gráfico de Faturamento por Vendedor
             df_fat = vendas_sucesso.groupby('vendedor')['valor'].sum().reset_index()
-            fig1 = px.bar(df_fat, x='vendedor', y='valor', title="Faturamento por Vendedor (R$)", 
-                          color='valor', color_continuous_scale='Greens', text_auto='.2s')
+            fig1 = px.bar(df_fat, x='vendedor', y='valor', title="Faturamento por Vendedor (R$)", color='valor', color_continuous_scale='Greens')
             st.plotly_chart(fig1, use_container_width=True)
-
         with col_g2:
-            # Gráfico de Motivos de Perda
-            df_perda = atendimentos_totais[atendimentos_totais['evento'] == 'Não convertido'].groupby('motivo').size().reset_index(name='qtd')
-            fig2 = px.pie(df_perda, values='qtd', names='motivo', title="Por que estamos perdendo vendas?", hole=0.4)
+            df_perda = atendimentos_reais[atendimentos_reais['evento'] == 'Não convertido'].groupby('motivo').size().reset_index(name='qtd')
+            fig2 = px.pie(df_perda, values='qtd', names='motivo', title="Motivos de Perda", hole=0.4)
             st.plotly_chart(fig2, use_container_width=True)
 
         st.divider()
-        
-        # EXPORTAÇÃO EXCEL (Openpyxl)
-        st.subheader("📥 Exportação de Auditoria")
-        df_export = dados_raw.sort_values(by='data', ascending=False)
-        df_export.columns = ['ID', 'Vendedor', 'Evento', 'Motivo/Detalhe', 'Valor (R$)', 'Peças (P.A.)', 'Data/Hora']
-        
         buffer = io.BytesIO()
+        df_export = dados_raw.sort_values(by='data', ascending=False)
+        df_export.columns = ['ID', 'Vendedor', 'Evento', 'Detalhe', 'Valor (R$)', 'Peças', 'Data/Hora']
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_export.to_excel(writer, index=False, sheet_name='Logs_Operacionais')
-        
-        st.download_button(
-            label="📊 Baixar Relatório Completo (.xlsx)",
-            data=buffer.getvalue(),
-            file_name=f"Auditoria_Elite_CasaCuecas_{datetime.now().strftime('%d_%m_%Hh%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else: st.info("Sem dados suficientes para gerar dashboards.")
+            df_export.to_excel(writer, index=False, sheet_name='Logs')
+        st.download_button("📊 Baixar Relatório Completo (.xlsx)", data=buffer.getvalue(), 
+                         file_name=f"Auditoria_Elite_{datetime.now().strftime('%d_%m')}.xlsx",
+                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else: st.info("Sem dados.")
 
 with t3:
     if st.session_state.user['is_admin']:
         st.subheader("⚙️ Gestão de Equipe")
         with st.container(border=True):
-            nome_n = st.text_input("Nome do Novo Vendedor:")
-            if st.button("Cadastrar Vendedor"):
+            nome_n = st.text_input("Nome do Vendedor:")
+            if st.button("Cadastrar"):
                 if nome_n:
-                    login_n = nome_n.lower().replace(" ", ".")
-                    check = run_db("SELECT * FROM usuarios WHERE login = ?", (login_n,), is_select=True)
-                    if not check.empty:
-                        st.error("Utilizador já cadastrado.")
+                    log_n = nome_n.lower().replace(" ", ".")
+                    check = run_db("SELECT * FROM usuarios WHERE login = ?", (log_n,), is_select=True)
+                    if not check.empty: st.error("Utilizador já existe.")
                     else:
-                        run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nome_n.title(), login_n, 'Fora', 0))
-                        st.success(f"{nome_n} adicionado!")
+                        run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nome_n.title(), log_n, 'Fora', 0))
                         st.rerun()
         
         st.divider()
         equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
         for _, r in equipe.iterrows():
-            c_inf, c_del = st.columns([4, 1])
-            c_inf.write(f"👤 **{r['nome']}** | Login: {r['login']}")
-            if c_del.button("Remover", key=f"del_{r['id']}"):
-                run_db("DELETE FROM usuarios WHERE id=?", (r['id'],))
-                st.rerun()
-    else: st.warning("Área restrita ao Administrador.")
+            ci, cd = st.columns([4, 1])
+            ci.write(f"👤 **{r['nome']}** | Login: {r['login']}")
+            if cd.button("Excluir", key=f"del_{r['id']}"):
+                run_db("DELETE FROM usuarios WHERE id=?", (r['id'],)); st.rerun()
+    else: st.warning("Acesso Admin necessário.")
 
 with st.sidebar:
     st.image("https://casadascuecas.vteximg.com.br/arquivos/logo-casa-das-cuecas.png", width=150)
     st.write(f"Operador: **{st.session_state.user['nome']}**")
-    if st.button("Logout / Sair"):
-        st.session_state.user = None
-        st.rerun()
+    if st.button("Logout"):
+        st.session_state.user = None; st.rerun()
