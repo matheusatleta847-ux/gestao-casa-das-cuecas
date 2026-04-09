@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (DESIGN MONDAY INTEGRADO) ---
+# --- 1. CONFIGURAÇÃO E CSS (FIX VISUAL EXPANDER) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
@@ -18,6 +18,14 @@ st.markdown("""
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
+    }
+
+    /* Ajuste para o Expander não bugar o texto */
+    .st-expanderHeader {
+        font-weight: 700 !important;
+        color: #1E1F23 !important;
+        background-color: #FFF0F1 !important; /* Fundo levemente avermelhado */
+        border-radius: 4px !important;
     }
 
     .monday-card-pro {
@@ -62,7 +70,6 @@ st.markdown("""
         border-color: #0073EA !important;
     }
     
-    /* Estilo para Botão de Perigo (Apagar Dados) */
     .btn-danger button {
         border-left: 8px solid #E44258 !important;
         color: #E44258 !important;
@@ -220,14 +227,12 @@ elif st.session_state.pagina == "CONFIGURAÇÃO":
     st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     
-    # 1. META
     nm = st.number_input("Meta Diária (R$):", value=float(run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]))
     if st.button("SALVAR META", key="sm", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,)); st.rerun()
     
     st.divider()
     
-    # 2. EQUIPE
     st.write("#### 👤 ADICIONAR VENDEDOR")
     nn = st.text_input("NOME COMPLETO")
     if st.button("CADASTRAR", key="cad", type="primary"):
@@ -235,19 +240,18 @@ elif st.session_state.pagina == "CONFIGURAÇÃO":
     
     st.divider()
     
-    # 3. LIMPEZA DE DADOS (SEGURANÇA ADMIN)
     st.write("#### 🚨 ÁREA DE RISCO")
+    # Título do Expander limpo sem bug de seta
     with st.expander("LIMPAR HISTÓRICO DE VENDAS"):
-        st.warning("Atenção: Isso apagará todos os registros de faturamento permanentemente.")
+        st.warning("Isso apagará todos os registros permanentemente.")
         senha_limpeza = st.text_input("Senha de Admin", type="password", key="pwd_limpar")
         st.markdown("<div class='btn-danger'>", unsafe_allow_html=True)
-        if st.button("APAGAR TODO O HISTÓRICO"):
+        if st.button("APAGAR TUDO"):
             if senha_limpeza == "admin123":
                 run_db("DELETE FROM historico")
-                st.success("Histórico apagado com sucesso!")
-                st.rerun()
+                st.success("Histórico zerado!"); st.rerun()
             else:
-                st.error("Senha incorreta!")
+                st.error("Senha inválida!")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
