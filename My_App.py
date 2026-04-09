@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, date
 import io
 import plotly.express as px
 
-# --- 1. CONFIGURAÇÃO E CSS ---
-st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide", page_icon="🛍️")
+# --- 1. CONFIGURAÇÃO PREMIUM & CSS ---
+st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide", page_icon="📈")
 
 st.markdown("""
     <style>
@@ -20,28 +20,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE DADOS (NOME FIXO PARA NÃO PERDER DADOS) ---
-DB_NAME = 'gestao_casa_cuecas_oficial.db'
+# --- 2. MOTOR DE DADOS ---
+DB_NAME = 'gestao_elite_v25.db'
 
 def get_now_br():
     return datetime.utcnow() - timedelta(hours=3)
 
 def run_db(query, params=(), is_select=False):
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    try:
-        if is_select:
-            df = pd.read_sql(query, conn, params=params)
-            return df
-        else:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            conn.commit() # FORÇA A GRAVAÇÃO
-            return True
-    except Exception as e:
-        st.error(f"Erro no Banco: {e}")
-        return None
-    finally:
-        conn.close()
+    with sqlite3.connect(DB_NAME) as conn:
+        if is_select: return pd.read_sql(query, conn, params=params)
+        conn.execute(query, params); conn.commit()
 
 def init_db():
     run_db('''CREATE TABLE IF NOT EXISTS usuarios 
@@ -49,19 +37,20 @@ def init_db():
     run_db('''CREATE TABLE IF NOT EXISTS historico 
               (id INTEGER PRIMARY KEY, vendedor TEXT, evento TEXT, motivo TEXT, valor REAL, itens INTEGER, data TEXT)''')
     run_db('''CREATE TABLE IF NOT EXISTS config (chave TEXT PRIMARY KEY, valor REAL)''')
-    run_db("INSERT OR IGNORE INTO config (chave, valor) VALUES ('meta_loja', 5000.0)")
+    try: run_db("INSERT OR IGNORE INTO config (chave, valor) VALUES ('meta_loja', 5000.0)")
+    except: pass
 
 init_db()
 
 def get_next_ordem():
-    res = run_db("SELECT MAX(ordem) FROM usuarios", is_select=True)
-    val = res.iloc[0,0] if not res.empty else 0
-    return (int(val) if val is not None else 0) + 1
+    with sqlite3.connect(DB_NAME) as conn:
+        res = conn.execute("SELECT MAX(ordem) FROM usuarios").fetchone()[0]
+        return (int(res) if res is not None else 0) + 1
 
 # --- 3. ACESSO ---
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
-    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Login Casa das Cuecas</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Login PRO-Vez Elite</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
         with st.form("login"):
@@ -74,15 +63,22 @@ if not st.session_state.user:
                     res = run_db("SELECT * FROM usuarios WHERE login = ?", (u,), True)
                     if not res.empty: 
                         st.session_state.user = {"nome": res.iloc[0]['nome'], "is_admin": False}; st.rerun()
-                    else: st.error("Acesso negado.")
+                    else: st.error("Login inválido.")
     st.stop()
 
-# --- 4. TABS ---
-t1, t2, t3 = st.tabs(["📋 OPERAÇÃO", "📊 HISTÓRICO E EDIÇÃO", "⚙️ EQUIPE"])
+# --- 4. INTERFACE ---
+t1, t2, t3 = st.tabs(["📋 OPERAÇÃO", "📊 DESEMPENHO & HISTÓRICO", "⚙️ EQUIPE"])
 
 with t1:
-    meta_val = run_db("SELECT valor FROM config WHERE chave = 'meta_loja'", is_select=True).iloc[0,0]
-    st.markdown(f"<div class='meta-container'><h3>🎯 Meta Diária: R$ {meta_val:,.2f}</h3></div>", unsafe_allow_html=True)
+    hoje_dt = get_now_br()
+    hoje_str = hoje_dt.strftime('%Y-%m-%d')
+    dados_hoje = run_db("SELECT * FROM historico WHERE data LIKE ?", (f"{hoje_str}%",), is_select=True)
+    meta_val = run_db("SELECT valor FROM config WHERE chave = 'meta_loja'", is_select=True).iloc[0]['valor']
+    vendas_hoje = dados_hoje[dados_hoje['evento'] == 'Sucesso']
+    fat_hoje = vendas_hoje['valor'].sum() if not vendas_hoje.empty else 0
+    
+    st.markdown(f"<div class='meta-container'><h3 style='margin:0;'>🎯 Meta Diária: R$ {meta_val:,.2f} | Vendido Hoje: R$ {fat_hoje:,.2f}</h3></div>", unsafe_allow_html=True)
+    st.progress(min(fat_hoje / meta_val, 1.0) if meta_val > 0 else 0)
 
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
     c1, c2, c3 = st.columns(3)
@@ -100,18 +96,20 @@ with t1:
         for _, v in vendedores[vendedores['status'] == 'Atendendo'].iterrows():
             with st.container(border=True):
                 st.write(f"Vendedor: **{v['nome']}**")
-                if st.button("Finalizar", key=f"f_{v['id']}"):
+                if st.button("Concluir Atendimento", key=f"f_{v['id']}"):
                     st.session_state[f"fin_{v['id']}"] = True
             
             if st.session_state.get(f"fin_{v['id']}", False):
-                with st.expander("Registrar Venda", expanded=True):
-                    dt_venda = st.date_input("Data:", value=date.today(), key=f"dt_{v['id']}")
+                with st.expander("Registrar Venda (Pode mudar a data)", expanded=True):
+                    # NOVO: Campo de data para permitir lançar vendas passadas
+                    data_venda = st.date_input("Data da Venda:", value=hoje_dt.date(), key=f"dt_{v['id']}")
                     res = st.selectbox("Resultado:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
-                    vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}")
-                    it = st.number_input("Itens:", min_value=0, step=1, key=f"i_{v['id']}")
+                    vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
+                    it = st.number_input("Qtd Itens:", min_value=1, step=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
                     
-                    if st.button("GRAVAR AGORA", key=f"gv_{v['id']}"):
-                        data_final = datetime.combine(dt_venda, datetime.now().time()).isoformat()
+                    if st.button("Gravar no Sistema", key=f"gv_{v['id']}"):
+                        # Salva com a data escolhida + hora atual para manter ordem
+                        data_final = datetime.combine(data_venda, datetime.now().time()).isoformat()
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
                                (v['nome'], res, res, vlr, it, data_final))
                         run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_next_ordem(), v['id']))
@@ -125,44 +123,61 @@ with t1:
                 run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (get_next_ordem(), v['id'])); st.rerun()
 
 with t2:
-    st.subheader("📊 Histórico de Vendas")
-    ver_tudo = st.checkbox("🔓 Ver todo o histórico (sem filtro de data)")
+    st.subheader("📊 Relatórios e Filtros de Data")
+    # Calendário que aceita intervalo (Range)
+    data_sel = st.date_input("Selecione o período (Ex: clique no dia 01 e depois no dia 09):", 
+                             value=(date.today() - timedelta(days=7), date.today()))
     
-    if ver_tudo:
-        df_f = run_db("SELECT * FROM historico ORDER BY data DESC", is_select=True)
+    # Lógica de filtro para um dia ou intervalo
+    if isinstance(data_sel, tuple) and len(data_sel) == 2:
+        inicio, fim = data_sel
+        df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (inicio.isoformat(), fim.isoformat()), is_select=True)
+    elif isinstance(data_sel, date):
+        df_f = run_db("SELECT * FROM historico WHERE data LIKE ?", (f"{data_sel.strftime('%Y-%m-%d')}%",), is_select=True)
     else:
-        hoje = date.today().strftime('%Y-%m-%d')
-        df_f = run_db("SELECT * FROM historico WHERE data LIKE ? ORDER BY data DESC", (f"{hoje}%",), is_select=True)
+        df_f = run_db("SELECT * FROM historico", is_select=True)
 
     if not df_f.empty:
-        st.write("### 📝 Tabela de Edição")
-        edt = st.data_editor(df_f, hide_index=True, use_container_width=True)
-        if st.button("💾 SALVAR ALTERAÇÕES"):
-            for _, r in edt.iterrows():
-                run_db("UPDATE historico SET vendedor=?, evento=?, valor=?, itens=?, data=? WHERE id=?", 
-                       (r['vendedor'], r['evento'], r['valor'], r['itens'], r['data'], r['id']))
-            st.success("✅ Salvo!"); st.rerun()
-            
-        fig = px.bar(df_f[df_f['evento']=='Sucesso'].groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', title="Vendas do Período")
-        st.plotly_chart(fig)
+        vendas = df_f[df_f['evento'] == 'Sucesso']
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Vendido no Período", f"R$ {vendas['valor'].sum():,.2f}")
+        c2.metric("Atendimentos Total", len(df_f))
+        c3.metric("Conversão", f"{(len(vendas)/len(df_f)*100):.1f}%" if len(df_f)>0 else "0%")
+
+        fig = px.bar(vendas.groupby('vendedor')['valor'].sum().reset_index(), 
+                     x='vendedor', y='valor', title="Faturamento por Vendedor no Período", template="seaborn", color='valor')
+        st.plotly_chart(fig, use_container_width=True)
+
+        if st.session_state.user['is_admin']:
+            st.markdown("### 📝 Histórico Detalhado (Edite se precisar)")
+            edt = st.data_editor(df_f, hide_index=True, use_container_width=True,
+                                column_config={"data": st.column_config.DatetimeColumn("Data/Hora")})
+            if st.button("Salvar Edições"):
+                for _, r in edt.iterrows():
+                    run_db("UPDATE historico SET vendedor=?, evento=?, valor=?, itens=?, data=? WHERE id=?", 
+                           (r['vendedor'], r['evento'], r['valor'], r['itens'], r['data'], r['id']))
+                st.success("Dados atualizados!"); st.rerun()
     else:
-        st.warning("Nenhum dado encontrado para hoje. Use a aba OPERAÇÃO para lançar ou marque 'Ver todo o histórico'.")
+        st.info("Nenhum dado encontrado para o período selecionado.")
 
 with t3:
     if st.session_state.user['is_admin']:
         st.subheader("⚙️ Configurações")
-        m = st.number_input("Meta Diária:", value=meta_val)
+        m = st.number_input("Meta Diária Padrão:", value=meta_val)
         if st.button("Salvar Meta"):
             run_db("UPDATE config SET valor = ? WHERE chave = 'meta_loja'", (m,))
-            st.rerun()
+            st.success("Meta salva!")
         
         st.divider()
-        n = st.text_input("Vendedor:")
-        if st.button("Adicionar"):
+        n = st.text_input("Adicionar Vendedor:")
+        if st.button("Cadastrar"):
             if n:
-                run_db("INSERT OR IGNORE INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", 
-                       (n.title(), n.lower().replace(" ","."), 'Fora', 0))
-                st.rerun()
+                login = n.lower().replace(" ", ".")
+                check = run_db("SELECT * FROM usuarios WHERE login = ?", (login,), is_select=True)
+                if check.empty:
+                    run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (n.title(), login, 'Fora', 0))
+                    st.rerun()
+                else: st.error("Vendedor já existe!")
         
         for _, r in run_db("SELECT * FROM usuarios", is_select=True).iterrows():
             c1, c2 = st.columns([3, 1])
