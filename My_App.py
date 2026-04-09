@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. MOTOR DE DADOS ---
-DB_NAME = 'gestao_elite_v25.db'
+DB_NAME = 'gestao_elite_v26.db'
 
 def get_now_br():
     return datetime.utcnow() - timedelta(hours=3)
@@ -100,15 +100,13 @@ with t1:
                     st.session_state[f"fin_{v['id']}"] = True
             
             if st.session_state.get(f"fin_{v['id']}", False):
-                with st.expander("Registrar Venda (Pode mudar a data)", expanded=True):
-                    # NOVO: Campo de data para permitir lançar vendas passadas
+                with st.expander("Registrar Venda (Retroativa)", expanded=True):
                     data_venda = st.date_input("Data da Venda:", value=hoje_dt.date(), key=f"dt_{v['id']}")
                     res = st.selectbox("Resultado:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
                     vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
                     it = st.number_input("Qtd Itens:", min_value=1, step=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
                     
                     if st.button("Gravar no Sistema", key=f"gv_{v['id']}"):
-                        # Salva com a data escolhida + hora atual para manter ordem
                         data_final = datetime.combine(data_venda, datetime.now().time()).isoformat()
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
                                (v['nome'], res, res, vlr, it, data_final))
@@ -124,52 +122,57 @@ with t1:
 
 with t2:
     st.subheader("📊 Relatórios e Filtros de Data")
-    # Calendário que aceita intervalo (Range)
-    data_sel = st.date_input("Selecione o período (Ex: clique no dia 01 e depois no dia 09):", 
+    
+    # Seletor de período
+    data_sel = st.date_input("Selecione o período para ver no gráfico:", 
                              value=(date.today() - timedelta(days=7), date.today()))
     
-    # Lógica de filtro para um dia ou intervalo
-    if isinstance(data_sel, tuple) and len(data_sel) == 2:
+    # Botão de pânico/emergência para ver tudo
+    ver_tudo = st.checkbox("🔓 Mostrar TODO o histórico (Ignorar calendário)")
+
+    if ver_tudo:
+        df_f = run_db("SELECT * FROM historico ORDER BY data DESC", is_select=True)
+    elif isinstance(data_sel, tuple) and len(data_sel) == 2:
         inicio, fim = data_sel
-        df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (inicio.isoformat(), fim.isoformat()), is_select=True)
-    elif isinstance(data_sel, date):
-        df_f = run_db("SELECT * FROM historico WHERE data LIKE ?", (f"{data_sel.strftime('%Y-%m-%d')}%",), is_select=True)
+        df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ? ORDER BY data DESC", (inicio.isoformat(), fim.isoformat()), is_select=True)
     else:
-        df_f = run_db("SELECT * FROM historico", is_select=True)
+        df_f = run_db("SELECT * FROM historico WHERE data LIKE ? ORDER BY data DESC", (f"{date.today().strftime('%Y-%m-%d')}%",), is_select=True)
 
     if not df_f.empty:
         vendas = df_f[df_f['evento'] == 'Sucesso']
         c1, c2, c3 = st.columns(3)
-        c1.metric("Vendido no Período", f"R$ {vendas['valor'].sum():,.2f}")
-        c2.metric("Atendimentos Total", len(df_f))
+        c1.metric("Faturamento", f"R$ {vendas['valor'].sum():,.2f}")
+        c2.metric("Atendimentos", len(df_f))
         c3.metric("Conversão", f"{(len(vendas)/len(df_f)*100):.1f}%" if len(df_f)>0 else "0%")
 
         fig = px.bar(vendas.groupby('vendedor')['valor'].sum().reset_index(), 
-                     x='vendedor', y='valor', title="Faturamento por Vendedor no Período", template="seaborn", color='valor')
+                     x='vendedor', y='valor', title="Faturamento por Vendedor", template="seaborn", color='valor')
         st.plotly_chart(fig, use_container_width=True)
 
         if st.session_state.user['is_admin']:
-            st.markdown("### 📝 Histórico Detalhado (Edite se precisar)")
-            edt = st.data_editor(df_f, hide_index=True, use_container_width=True,
-                                column_config={"data": st.column_config.DatetimeColumn("Data/Hora")})
-            if st.button("Salvar Edições"):
+            st.markdown("### 📝 Tabela de Edição Direta")
+            st.write("Dê um duplo clique na célula para mudar o valor, vendedor ou a DATA.")
+            edt = st.data_editor(df_f, hide_index=True, use_container_width=True)
+            
+            if st.button("💾 SALVAR ALTERAÇÕES"):
                 for _, r in edt.iterrows():
                     run_db("UPDATE historico SET vendedor=?, evento=?, valor=?, itens=?, data=? WHERE id=?", 
                            (r['vendedor'], r['evento'], r['valor'], r['itens'], r['data'], r['id']))
-                st.success("Dados atualizados!"); st.rerun()
+                st.success("✅ Histórico atualizado com sucesso!"); st.rerun()
     else:
-        st.info("Nenhum dado encontrado para o período selecionado.")
+        st.warning("⚠️ Nenhum dado encontrado para o período do calendário.")
+        st.info("💡 Dica: Marque a caixa acima 'Mostrar TODO o histórico' para ver registros de outros dias.")
 
 with t3:
     if st.session_state.user['is_admin']:
         st.subheader("⚙️ Configurações")
-        m = st.number_input("Meta Diária Padrão:", value=meta_val)
+        m = st.number_input("Meta Diária:", value=meta_val)
         if st.button("Salvar Meta"):
             run_db("UPDATE config SET valor = ? WHERE chave = 'meta_loja'", (m,))
             st.success("Meta salva!")
         
         st.divider()
-        n = st.text_input("Adicionar Vendedor:")
+        n = st.text_input("Novo Vendedor:")
         if st.button("Cadastrar"):
             if n:
                 login = n.lower().replace(" ", ".")
