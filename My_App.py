@@ -3,36 +3,42 @@ import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 import io
-import plotly.express as px
 
-# --- 1. CONFIGURAÇÃO PREMIUM & UI ---
-st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide", page_icon="🛍️")
+# --- 1. CONFIGURAÇÃO & CSS (FOCO EM ESTABILIDADE) ---
+st.set_page_config(page_title="PRO-Vez | Casa das Cuecas", layout="wide", page_icon="🛍️")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #F8FAFC; }
+    
     .metric-card { 
         background: white; padding: 20px; border-radius: 12px; 
         box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
         border-top: 4px solid #1E293B; margin-bottom: 20px; 
     }
     .metric-value { color: #1E293B; font-size: 28px; font-weight: 700; }
+
+    /* Estilo de Card para evitar sobreposição */
     .vendedor-box { 
         background: white; padding: 16px; border-radius: 10px; 
-        border: 1px solid #E2E8F0; margin-bottom: 12px; 
-        display: flex; flex-direction: column; gap: 8px; width: 100%; 
+        border: 1px solid #E2E8F0; margin-bottom: 20px; 
+        width: 100%; display: block;
     }
     .primeiro-vez { border: 2px solid #22C55E; background: #F0FDF4; }
-    .stButton>button { border-radius: 8px; font-weight: 600; width: 100%; height: 40px; }
+    
+    /* Forçar botões a terem espaço próprio */
+    .stButton>button { border-radius: 8px; font-weight: 600; width: 100%; height: 45px; margin-top: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. FUNÇÕES DE SUPORTE ---
-def get_now_br_str():
-    return (datetime.now() - timedelta(hours=3)).strftime('%d/%m/%Y %H:%M:%S')
+# --- 2. MOTOR DE DADOS & HORA BRASÍLIA ---
+DB_NAME = 'gestao_casa_v20.db'
 
-DB_NAME = 'gestao_elite_v18.db'
+def get_now_br_str():
+    # Ajuste fixo para Brasília (UTC-3)
+    br_time = datetime.utcnow() - timedelta(hours=3)
+    return br_time.strftime('%d/%m/%Y %H:%M:%S')
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME) as conn:
@@ -52,15 +58,16 @@ def next_ordem():
         res = conn.execute("SELECT MAX(ordem) FROM usuarios").fetchone()[0]
         return (int(res) if res is not None else 0) + 1
 
-# --- 3. LOGIN ---
+# --- 3. ACESSO ---
 if 'user' not in st.session_state: st.session_state.user = None
+
 if not st.session_state.user:
-    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Painel Casa das Cuecas</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 Acesso Casa das Cuecas</h2>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
         with st.form("login_form"):
-            u = st.text_input("Usuário:").strip().lower()
-            p = st.text_input("Senha:", type="password")
+            u = st.text_input("Login:").strip().lower()
+            p = st.text_input("Senha Admin:", type="password")
             if st.form_submit_button("Entrar"):
                 if u == "admin" and p == "admin@123":
                     st.session_state.user = {"nome": "Admin", "is_admin": True}; st.rerun()
@@ -73,117 +80,107 @@ if not st.session_state.user:
 
 # --- 4. KPIs ---
 dados_raw = run_db("SELECT * FROM historico", is_select=True)
-vendas_sucesso = dados_raw[dados_raw['evento'] == 'Sucesso']
-atendimentos = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
+atendimentos_reais = dados_raw[dados_raw['evento'].isin(['Sucesso', 'Não convertido', 'Troca'])]
 
-faturamento = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0
-conversao = (len(vendas_sucesso) / len(atendimentos) * 100) if not atendimentos.empty else 0
-pa_medio = (vendas_sucesso['itens'].sum() / len(vendas_sucesso)) if not vendas_sucesso.empty else 0
+faturamento = atendimentos_reais[atendimentos_reais['evento'] == 'Sucesso']['valor'].sum() if not atendimentos_reais.empty else 0
+conversao = (len(atendimentos_reais[atendimentos_reais['evento'] == 'Sucesso']) / len(atendimentos_reais) * 100) if not atendimentos_reais.empty else 0
 
 k1, k2, k3 = st.columns(3)
 k1.markdown(f'<div class="metric-card">Faturamento<br><span class="metric-value">R$ {faturamento:,.2f}</span></div>', unsafe_allow_html=True)
-k2.markdown(f'<div class="metric-card">Conversão<br><span class="metric-value">{conversao:.1f}%</span></div>', unsafe_allow_html=True)
-k3.markdown(f'<div class="metric-card">P.A. Médio<br><span class="metric-value">{pa_medio:.2f}</span></div>', unsafe_allow_html=True)
+k2.markdown(f'<div class="metric-card">Conversão Real<br><span class="metric-value">{conversao:.1f}%</span></div>', unsafe_allow_html=True)
+k3.markdown(f'<div class="metric-card">Atendimentos<br><span class="metric-value">{len(atendimentos_reais)}</span></div>', unsafe_allow_html=True)
 
-# --- 5. OPERAÇÃO ---
-t1, t2, t3 = st.tabs(["📋 FILA", "📊 DESEMPENHO", "⚙️ CONFIG"])
+# --- 5. OPERAÇÃO (LAYOUT EM LISTA VERTICAL) ---
+st.divider()
+t1, t2, t3 = st.tabs(["📋 FILA", "📊 PERFORMANCE", "⚙️ CONFIG"])
 
 with t1:
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
-    c_fila, c_atend, c_fora = st.columns(3)
+    c_col1, c_col2, c_col3 = st.columns(3)
 
-    with c_fila:
+    with c_col1:
         st.subheader("⏳ Na Fila")
         esp = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for i, v in esp.iterrows():
             classe = "vendedor-box primeiro-vez" if i == 0 else "vendedor-box"
-            st.markdown(f"<div class='{classe}'><b>{v['nome']}</b><br><small>{i+1}º da Vez</small></div>", unsafe_allow_html=True)
-            col_a, col_b = st.columns(2)
-            if col_a.button("Atender", key=f"at_{v['id']}"):
-                run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],))
-                st.rerun()
-            if col_b.button("Sair", key=f"p_{v['id']}"):
-                st.session_state[f"modal_{v['id']}"] = True
-            
-            if st.session_state.get(f"modal_{v['id']}", False):
-                with st.expander("Motivo da Saída:", expanded=True):
-                    mot = st.selectbox("Selecione:", ["Almoço", "Banheiro", "Lanche", "Finalizar dia", "Externo"], key=f"sel_{v['id']}")
-                    if st.button("Confirmar", key=f"ok_{v['id']}"):
-                        ev = "FINAL DE DIA" if mot == "Finalizar dia" else "SAÍDA (PAUSA)"
-                        run_db("UPDATE usuarios SET status='Fora', motivo_pausa=? WHERE id=?", (mot, v['id']))
-                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], ev, mot, 0, 0, get_now_br_str()))
-                        st.session_state[f"modal_{v['id']}"] = False; st.rerun()
+            with st.container():
+                st.markdown(f"<div class='{classe}'><b>{v['nome']}</b><br><small>{i+1}º da Vez</small></div>", unsafe_allow_html=True)
+                if st.button("Atender", key=f"at_{v['id']}"):
+                    run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],))
+                    st.rerun()
+                if st.button("Sair / Pausa", key=f"p_{v['id']}"):
+                    st.session_state[f"modal_{v['id']}"] = True
+                
+                if st.session_state.get(f"modal_{v['id']}", False):
+                    with st.expander("Motivo da Saída:", expanded=True):
+                        mot = st.selectbox("Selecione:", ["Almoço", "Banheiro", "Lanche", "Finalizar dia", "Externo"], key=f"sel_{v['id']}")
+                        if st.button("Confirmar", key=f"ok_{v['id']}"):
+                            ev = "FINAL DE DIA" if mot == "Finalizar dia" else "SAÍDA (PAUSA)"
+                            run_db("UPDATE usuarios SET status='Fora', motivo_pausa=? WHERE id=?", (mot, v['id']))
+                            run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], ev, mot, 0, 0, get_now_br_str()))
+                            st.session_state[f"modal_{v['id']}"] = False; st.rerun()
 
-    with c_atend:
+    with c_col2:
         st.subheader("🚀 Atendendo")
         atend = vendedores[vendedores['status'] == 'Atendendo']
         for _, v in atend.iterrows():
-            with st.container(border=True):
-                st.markdown(f"**{v['nome']}**")
-                if st.button("Concluir Atendimento", key=f"fin_{v['id']}", type="primary"):
+            with st.container():
+                st.markdown(f"<div class='vendedor-box'><b>{v['nome']}</b></div>", unsafe_allow_html=True)
+                if st.button("Finalizar", key=f"fin_{v['id']}", type="primary"):
                     st.session_state[f"f_{v['id']}"] = True
-            
-            if st.session_state.get(f"f_{v['id']}", False):
-                with st.expander("Resultado do Atendimento:", expanded=True):
-                    res = st.selectbox("Status:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
-                    
-                    # Campos dinâmicos baseados na escolha
-                    if res == "Sucesso":
-                        vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}")
-                        it = st.number_input("Itens:", min_value=1, key=f"i_{v['id']}")
-                        motivo_final = "Venda"
-                    else:
-                        vlr, it = 0.0, 0
-                        motivo_final = st.selectbox("Motivo:", ["Preço", "Falta Tamanho", "Só olhando", "Falta Cor", "Troca"], key=f"m_{v['id']}")
+                
+                if st.session_state.get(f"f_{v['id']}", False):
+                    with st.expander("Resultado:", expanded=True):
+                        res = st.selectbox("Status:", ["Sucesso", "Não convertido", "Troca"], key=f"res_{v['id']}")
+                        vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
+                        it = st.number_input("Itens:", min_value=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
+                        if st.button("Salvar Registro", key=f"sv_{v['id']}"):
+                            run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, "Venda", vlr, it, get_now_br_str()))
+                            run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (next_ordem(), v['id']))
+                            st.session_state[f"f_{v['id']}"] = False; st.rerun()
 
-                    if st.button("Salvar Registro", key=f"sv_{v['id']}"):
-                        run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
-                               (v['nome'], res, motivo_final, vlr, it, get_now_br_str()))
-                        run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (next_ordem(), v['id']))
-                        st.session_state[f"f_{v['id']}"] = False; st.rerun()
-
-    with c_fora:
-        st.subheader("💤 Fora da Loja")
+    with c_col3:
+        st.subheader("💤 Fora")
         fora = vendedores[vendedores['status'] == 'Fora']
         for _, v in fora.iterrows():
             with st.container():
                 st.markdown(f"<div class='vendedor-box' style='border-left:5px solid #64748B;'><b>{v['nome']}</b><br><small>Status: {v['motivo_pausa']}</small></div>", unsafe_allow_html=True)
-                if st.button(f"Retornar: {v['nome']}", key=f"ret_{v['id']}"):
+                if st.button(f"Entrar / Retornar: {v['nome']}", key=f"ret_{v['id']}"):
                     ev = "INÍCIO DE DIA" if v['motivo_pausa'] in ["Finalizar dia", None] else "RETORNO (PAUSA)"
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], ev, v['motivo_pausa'], 0, 0, get_now_br_str()))
                     run_db("UPDATE usuarios SET status='Esperando', ordem=?, motivo_pausa=NULL WHERE id=?", (next_ordem(), v['id']))
                     st.rerun()
 
 with t2:
-    st.subheader("📊 Gráficos de Vendas")
-    if not atendimentos.empty:
-        c1, c2 = st.columns(2)
-        with c1:
-            fig1 = px.bar(vendas_sucesso.groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', title="Faturamento (R$)", color='valor', color_continuous_scale='Greens')
-            st.plotly_chart(fig1, use_container_width=True)
-        with c2:
-            fig2 = px.pie(atendimentos[atendimentos['evento'] == 'Não convertido'].groupby('motivo').size().reset_index(name='qtd'), values='qtd', names='motivo', title="Motivos de Perda", hole=0.4)
-            st.plotly_chart(fig2, use_container_width=True)
+    st.subheader("🏆 Performance & Relatórios")
+    if not atendimentos_reais.empty:
+        vendas_por_vendedor = atendimentos_reais[atendimentos_reais['evento'] == 'Sucesso'].groupby('vendedor')['valor'].sum()
+        if not vendas_por_vendedor.empty:
+            st.markdown("### Faturamento por Vendedor (R$)")
+            st.bar_chart(vendas_por_vendedor)
         
         st.divider()
+        df_export = dados_raw.sort_values(by='id', ascending=False)
+        df_export.columns = ['ID', 'Vendedor', 'Evento', 'Motivo', 'Valor', 'Itens', 'Data/Hora (SP)']
+        
         buffer = io.BytesIO()
-        df_exp = dados_raw.sort_values(by='id', ascending=False)
-        df_exp.columns = ['ID', 'Vendedor', 'Evento', 'Detalhe', 'Valor (R$)', 'Itens', 'Data/Hora']
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_exp.to_excel(writer, index=False, sheet_name='Logs')
-        st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name="Relatorio_Casa_Cuecas.xlsx")
+            df_export.to_excel(writer, index=False, sheet_name='Auditoria_Loja')
+        st.download_button("📊 Baixar Relatório Excel Completo", data=buffer.getvalue(), file_name=f"Auditoria_Casa_Cuecas.xlsx")
+    else:
+        st.info("Nenhum dado registrado.")
 
 with t3:
     if st.session_state.user['is_admin']:
-        st.subheader("⚙️ Gestão de Equipe")
-        nome_n = st.text_input("Nome do Vendedor:")
+        st.subheader("⚙️ Gestão")
+        n = st.text_input("Nome:")
         if st.button("Cadastrar"):
-            if nome_n:
-                log_n = nome_n.lower().replace(" ", ".")
+            if n:
+                l = n.lower().replace(" ", ".")
                 try:
-                    run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nome_n.title(), log_n, 'Fora', 0))
+                    run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (n.title(), l, 'Fora', 0))
                     st.rerun()
-                except: st.error("Login já existe.")
+                except: st.error("Erro ou Login já existe.")
         equipe = run_db("SELECT * FROM usuarios ORDER BY nome ASC", is_select=True)
         for _, r in equipe.iterrows():
             cn, ce = st.columns([4, 1])
