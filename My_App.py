@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (FONTE ENCORPADA & CONTRASTE) ---
+# --- 1. CONFIGURAÇÃO E CSS (LIMPEZA DE ESPAÇOS VAZIOS) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
@@ -15,33 +15,41 @@ st.markdown("""
     /* Fundo suave Monday */
     .stApp { background-color: #F5F6F8 !important; }
     
-    /* Global Text - FORTE E EM NEGRITO */
+    /* Remove o espaço em branco padrão do Streamlit no topo */
+    .block-container { padding-top: 1rem !important; }
+
+    /* Texto Global */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
-        color: #1E1F23 !important; /* Grafite quase preto para contraste total */
+        color: #1E1F23 !important; 
     }
 
-    /* Títulos de Seções */
-    h3 { font-weight: 800 !important; font-size: 22px !important; }
-
-    /* Cartão Monday White */
-    .monday-card {
+    /* Cartão de Meta Unificado - Sem espaços fantasmas */
+    .meta-card-unificado {
         background-color: #FFFFFF !important;
-        padding: 24px;
+        padding: 20px;
         border-radius: 8px;
         border: 1px solid #C3C6D4;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        margin-bottom: 20px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        margin-bottom: 25px;
+        margin-top: -10px; /* Puxa para cima para remover vácuo */
     }
 
-    /* Meta Valor - SUPER DESTAQUE */
+    .meta-titulo {
+        font-weight: 800;
+        font-size: 14px;
+        color: #676879;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+    }
+
     .meta-valor {
         font-size: 34px;
         font-weight: 800;
         color: #0073EA !important;
     }
 
-    /* Item da Fila - Nomes em Negrito */
+    /* Vendedor Item */
     .vendedor-item {
         padding: 14px 18px;
         border-radius: 6px;
@@ -49,39 +57,31 @@ st.markdown("""
         background-color: #FFFFFF !important;
         border: 1px solid #BDC1D1;
     }
-    .vendedor-nome-texto {
-        font-weight: 700 !important;
-        font-size: 18px !important;
-        letter-spacing: -0.5px;
-    }
-    
     .primeiro-da-vez {
         border-left: 8px solid #00C875 !important;
         background-color: #F0FFF4 !important;
     }
+    .vendedor-nome-texto {
+        font-weight: 700 !important;
+        font-size: 18px !important;
+    }
 
-    /* BOTÕES - BORDAS MAIS FORTES */
+    /* Botões */
     .stButton > button {
         border-radius: 4px !important;
         font-weight: 700 !important;
         height: 40px;
-        border: 2px solid #D0D4E4 !important;
-        color: #1E1F23 !important;
+        border: 1px solid #D0D4E4 !important;
     }
-
-    /* Botão Primário Azul */
     .stButton > button[kind="primary"] {
         background-color: #0073EA !important;
         color: #FFFFFF !important;
         border: none !important;
     }
-    
-    /* Inputs com texto forte */
-    input, select, textarea { font-weight: 600 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE DADOS ---
+# --- 2. ENGINE DE DADOS ---
 DB_NAME = 'sistema_elite_v51.db'
 
 def run_db(query, params=(), is_select=False):
@@ -112,7 +112,7 @@ def get_min_ordem():
 if 'user' not in st.session_state: st.session_state.user = None
 if not st.session_state.user:
     with st.columns([1,1,1])[1]:
-        st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
         st.title("Acesse o Painel")
         u, p = st.text_input("Login").lower(), st.text_input("Senha", type="password")
         if st.button("Entrar", type="primary", use_container_width=True):
@@ -131,12 +131,16 @@ with tab1:
     df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
     fat_h = df_hoje[df_hoje['evento']=='Sucesso']['valor'].sum() if not df_hoje.empty else 0
     
-    st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
-    st.write("🎯 **META DIÁRIA**")
-    st.markdown(f"<div class='meta-valor'>R$ {fat_h:,.2f} <span style='font-size:16px; color:#676879; font-weight:700;'>/ R$ {meta_val:,.2f}</span></div>", unsafe_allow_html=True)
+    # RESOLUÇÃO DA BARRA BRANCA: Todo o conteúdo da meta dentro de UM ÚNICO container
+    st.markdown(f"""
+        <div class='meta-card-unificado'>
+            <div class='meta-titulo'>🎯 Meta Diária da Loja</div>
+            <div class='meta-valor'>R$ {fat_h:,.2f} <span style='font-size:16px; color:#676879; font-weight:700;'>/ R$ {meta_val:,.2f}</span></div>
+        </div>
+    """, unsafe_allow_html=True)
     st.progress(min(fat_h/meta_val, 1.0) if meta_val > 0 else 0.0)
-    st.markdown("</div>", unsafe_allow_html=True)
 
+    st.divider()
     c_f, c_a, c_p = st.columns(3)
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
 
@@ -177,7 +181,7 @@ with tab1:
     with c_a:
         st.write("### 🚀 ATENDENDO")
         for _, v in vendedores[vendedores['status'] == 'Atendendo'].iterrows():
-            st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
             st.write(f"VENDEDOR: **{v['nome'].upper()}**")
             res = st.selectbox("**RESULTADO**", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
             vlr, it, mot = 0.0, 0, res
@@ -194,7 +198,7 @@ with tab1:
     with c_p:
         st.write("### 💤 FORA DA LOJA")
         for _, v in vendedores[vendedores['status'] == 'Fora'].iterrows():
-            st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
             st.write(f"👤 **{v['nome'].upper()}**")
             if st.button(f"ENTRAR NA FILA", key=f"ret_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Entrou", 0.0, 0, get_now().isoformat()))
@@ -202,7 +206,7 @@ with tab1:
             st.markdown("</div>", unsafe_allow_html=True)
 
 with tab3:
-    st.markdown("<div class='monday-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='meta-card-unificado'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     nm = st.number_input("**Meta da Loja (R$):**", value=float(meta_val))
     if st.button("ATUALIZAR META", type="primary"):
