@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. MOTOR DE DADOS ---
-DB_NAME = 'gestao_elite_v23.db'
+DB_NAME = 'gestao_elite_v24.db'
 
 def get_now_br():
     return datetime.utcnow() - timedelta(hours=3)
@@ -70,7 +70,6 @@ if not st.session_state.user:
 t1, t2, t3 = st.tabs(["📋 OPERAÇÃO (Tempo Real)", "📊 DESEMPENHO & HISTÓRICO", "⚙️ EQUIPE"])
 
 with t1:
-    # Meta do dia fixo
     hoje_dt = get_now_br()
     hoje_str = hoje_dt.strftime('%Y-%m-%d')
     dados_hoje = run_db("SELECT * FROM historico WHERE data LIKE ?", (f"{hoje_str}%",), is_select=True)
@@ -78,7 +77,8 @@ with t1:
     vendas_hoje = dados_hoje[dados_hoje['evento'] == 'Sucesso']
     fat_hoje = vendas_hoje['valor'].sum() if not vendas_hoje.empty else 0
     
-    st.markdown(f"<div class='meta-container'><h3 style='margin:0;'>🎯 Meta Hoje: R$ {meta_val:,.2f} | Vendido: R$ {fat_hoje:,.2f}</h3></div>", unsafe_allow_html=True)
+    # CORREÇÃO DO NameError: Variável agora é meta_atual conforme definida acima
+    st.markdown(f"<div class='meta-container'><h3 style='margin:0;'>🎯 Meta Hoje: R$ {meta_atual:,.2f} | Vendido: R$ {fat_hoje:,.2f}</h3></div>", unsafe_allow_html=True)
     st.progress(min(fat_hoje / meta_atual, 1.0) if meta_atual > 0 else 0)
 
     vendedores = run_db("SELECT * FROM usuarios ORDER BY ordem ASC", is_select=True)
@@ -106,7 +106,6 @@ with t1:
                     vlr = st.number_input("Valor R$:", min_value=0.0, key=f"v_{v['id']}") if res == "Sucesso" else 0.0
                     it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}") if res == "Sucesso" else 0
                     if st.button("Gravar Agora", key=f"gv_{v['id']}"):
-                        # Grava com a hora exata de Brasília
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
                                (v['nome'], res, res, vlr, it, hoje_dt.isoformat()))
                         run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_next_ordem(), v['id'])); st.rerun()
@@ -124,19 +123,18 @@ with t2:
     # 1. Calendário para Filtro
     data_sel = st.date_input("Filtrar Histórico:", value=date.today())
     
-    # 2. Lançamento Retroativo (Somente Admin ou se você permitir)
+    # 2. Lançamento Retroativo (LANÇAR VENDAS DO DIA 01 ATÉ HOJE)
     if st.session_state.user['is_admin']:
-        with st.expander("➕ LANÇAR VENDA ANTIGA (Retroativa)"):
+        with st.expander("➕ LANÇAR VENDA PASSADA (Retroativa)"):
             c_ret1, c_ret2, c_ret3 = st.columns(3)
             v_antigo = c_ret1.selectbox("Vendedor:", run_db("SELECT nome FROM usuarios", is_select=True))
             d_antiga = c_ret2.date_input("Data da Venda:", value=date.today())
             res_antigo = c_ret3.selectbox("Resultado:", ["Sucesso", "Não convertido", "Troca"], key="ant_res")
             
-            vlr_antigo = st.number_input("Valor R$:", min_value=0.0) if res_antigo == "Sucesso" else 0.0
-            it_antigo = st.number_input("Itens:", min_value=1, step=1) if res_antigo == "Sucesso" else 0
+            vlr_antigo = st.number_input("Valor R$:", min_value=0.0, key="vlr_ant") if res_antigo == "Sucesso" else 0.0
+            it_antigo = st.number_input("Itens:", min_value=1, step=1, key="it_ant") if res_antigo == "Sucesso" else 0
             
             if st.button("Gravar Venda Antiga"):
-                # Combina a data selecionada com uma hora padrão (ex: 12:00) para o banco
                 data_final = datetime.combine(d_antiga, datetime.min.time()).isoformat()
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", 
                        (v_antigo, res_antigo, res_antigo, vlr_antigo, it_antigo, data_final))
@@ -144,7 +142,7 @@ with t2:
 
     st.divider()
 
-    # 3. Exibição e Edição do Histórico
+    # 3. Exibição e Edição do Histórico filtrado pela data do calendário
     dt_str = data_sel.strftime('%Y-%m-%d')
     df_f = run_db("SELECT * FROM historico WHERE data LIKE ?", (f"{dt_str}%",), is_select=True)
 
@@ -155,25 +153,27 @@ with t2:
         c2.metric("Atendimentos", len(df_f))
         c3.metric("Conversão", f"{(len(vendas)/len(df_f)*100):.1f}%" if len(df_f)>0 else "0%")
 
-        fig = px.bar(vendas.groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', title=f"Vendas em {data_sel.strftime('%d/%m/%Y')}", template="seaborn")
+        fig = px.bar(vendas.groupby('vendedor')['valor'].sum().reset_index(), x='vendedor', y='valor', 
+                     title=f"Vendas em {data_sel.strftime('%d/%m/%Y')}", template="seaborn")
         st.plotly_chart(fig, use_container_width=True)
 
         if st.session_state.user['is_admin']:
-            st.markdown("### 📝 Editar Registros deste Dia")
+            st.markdown("### 📝 Editar Registros")
             edt = st.data_editor(df_f, hide_index=True, use_container_width=True)
             if st.button("Salvar Edições"):
                 for _, r in edt.iterrows():
-                    run_db("UPDATE historico SET vendedor=?, evento=?, valor=?, itens=? WHERE id=?", (r['vendedor'], r['evento'], r['valor'], r['itens'], r['id']))
+                    run_db("UPDATE historico SET vendedor=?, evento=?, valor=?, itens=? WHERE id=?", 
+                           (r['vendedor'], r['evento'], r['valor'], r['itens'], r['id']))
                 st.success("Histórico atualizado!"); st.rerun()
     else:
-        st.info(f"Nenhum registro encontrado em {data_sel.strftime('%d/%m/%Y')}.")
+        st.info(f"Sem registros em {data_sel.strftime('%d/%m/%Y')}.")
 
 with t3:
     if st.session_state.user['is_admin']:
         st.subheader("⚙️ Configurações")
         nv_meta = st.number_input("Meta Diária (R$):", value=meta_atual)
         if st.button("Salvar Meta"):
-            run_db("UPDATE config SET valor = ? WHERE chave = 'meta_lo_ja'", (nv_meta,))
+            run_db("UPDATE config SET valor = ? WHERE chave = 'meta_loja'", (nv_meta,))
             st.success("Meta salva!")
 
         st.divider()
