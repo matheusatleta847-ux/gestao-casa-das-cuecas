@@ -5,29 +5,28 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (FIX VISUAL EXPANDER) ---
+# --- 1. CONFIGURAÇÃO E CSS (ESTILO MONDAY SEM COMPONENTES BUGADOS) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
+    
+    /* FUNDO E TOPO */
     .stApp { background-color: #F5F6F8 !important; }
     header { visibility: hidden !important; height: 0px !important; }
     .block-container { padding-top: 1rem !important; }
 
+    /* TEXTO GLOBAL EM NEGRITO E GRAFITE */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
+        font-weight: 600; /* Texto base mais encorpado */
     }
+    
+    h3 { font-weight: 800 !important; }
 
-    /* Ajuste para o Expander não bugar o texto */
-    .st-expanderHeader {
-        font-weight: 700 !important;
-        color: #1E1F23 !important;
-        background-color: #FFF0F1 !important; /* Fundo levemente avermelhado */
-        border-radius: 4px !important;
-    }
-
+    /* CARTÃO MONDAY */
     .monday-card-pro {
         background-color: #FFFFFF !important;
         padding: 22px;
@@ -37,6 +36,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
+    /* MENU DE NAVEGAÇÃO */
     .nav-container {
         display: flex;
         gap: 10px;
@@ -47,33 +47,32 @@ st.markdown("""
         margin-bottom: 25px;
     }
 
+    /* BOTÕES UNIFICADOS */
     .stButton > button {
         border-radius: 4px !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         height: 40px;
         border: 1px solid #D0D4E4 !important;
         background-color: #FFFFFF !important;
         transition: all 0.2s;
         text-transform: uppercase;
-        font-size: 12px;
     }
 
+    /* BOTÃO AZUL (AÇÃO) */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
         border: 1px solid #A2CFFF !important;
         border-left: 8px solid #0073EA !important;
     }
-    
-    .stButton > button[kind="primary"]:hover {
-        background-color: #D1E9FF !important;
-        border-color: #0073EA !important;
-    }
-    
-    .btn-danger button {
-        border-left: 8px solid #E44258 !important;
-        color: #E44258 !important;
+
+    /* CARTÃO DE PERIGO (SUBSTITUTO DO EXPANDER) */
+    .danger-box {
         background-color: #FFF0F1 !important;
+        border: 1px solid #E44258 !important;
+        padding: 15px;
+        border-radius: 6px;
+        margin-top: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -138,7 +137,7 @@ if st.session_state.pagina == "OPERAÇÃO":
                 <div style='text-align: center; border-right: 1px solid #E6E9EF; flex: 2;'>
                     <div style='font-weight:700; color:#676879; font-size:12px; text-transform:uppercase;'>🎯 FATURAMENTO HOJE</div>
                     <div style='font-size: 30px; font-weight: 800; color: #0073EA;'>R$ {fat_h:,.2f}</div>
-                    <div style='font-size: 14px; font-weight:700; color:#E44258;'>Falta: R$ {falta:,.2f}</div>
+                    <div style='font-size: 14px; font-weight:800; color:#E44258;'>Falta: R$ {falta:,.2f}</div>
                 </div>
                 <div style='text-align: center; border-right: 1px solid #E6E9EF; flex: 1;'>
                     <div style='font-weight:700; color:#676879; font-size:12px; text-transform:uppercase;'>📦 P.A.</div>
@@ -241,18 +240,18 @@ elif st.session_state.pagina == "CONFIGURAÇÃO":
     st.divider()
     
     st.write("#### 🚨 ÁREA DE RISCO")
-    # Título do Expander limpo sem bug de seta
-    with st.expander("LIMPAR HISTÓRICO DE VENDAS"):
-        st.warning("Isso apagará todos os registros permanentemente.")
-        senha_limpeza = st.text_input("Senha de Admin", type="password", key="pwd_limpar")
-        st.markdown("<div class='btn-danger'>", unsafe_allow_html=True)
-        if st.button("APAGAR TUDO"):
-            if senha_limpeza == "admin123":
-                run_db("DELETE FROM historico")
-                st.success("Histórico zerado!"); st.rerun()
-            else:
-                st.error("Senha inválida!")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # REMOVIDO EXPANDER PARA EVITAR ERRO VISUAL
+    st.markdown("<div class='danger-box'>", unsafe_allow_html=True)
+    st.write("**LIMPAR HISTÓRICO DE VENDAS**")
+    st.write("<small>Isso apagará todos os registros permanentemente.</small>", unsafe_allow_html=True)
+    senha_limpeza = st.text_input("Confirme com a Senha de Admin", type="password", key="pwd_limpar")
+    if st.button("APAGAR TUDO AGORA", type="primary"):
+        if senha_limpeza == "admin123":
+            run_db("DELETE FROM historico")
+            st.success("Histórico zerado!"); st.rerun()
+        else:
+            st.error("Senha inválida!")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
     st.write("#### 👥 EQUIPE ATUAL")
