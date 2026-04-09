@@ -5,30 +5,27 @@ from datetime import datetime, timedelta, date, time
 import plotly.express as px
 import io
 
-# --- 1. CONFIGURAÇÃO E CSS (DESIGN ESTÁVEL MONDAY) ---
+# --- 1. CONFIGURAÇÃO E CSS (ESTILO MONDAY SEM ERROS) ---
 st.set_page_config(page_title="PRO-Vez Elite | Casa das Cuecas", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;700;800&display=swap');
     
-    /* FUNDO PRINCIPAL */
+    /* FUNDO E CORES GLOBAIS */
     .stApp { background-color: #F5F6F8 !important; }
     
-    /* REMOÇÃO DEFINITIVA DO GAP BRANCO SEM SUBIR DEMAIS */
-    header { visibility: hidden !important; height: 0px !important; }
-    .block-container { padding-top: 1rem !important; }
-    
-    /* Remove o espaço interno que o Streamlit cria entre as abas e o conteúdo */
-    [data-testid="stVerticalBlock"] > div:first-child { margin-top: 0px !important; padding-top: 0px !important; }
+    /* AJUSTE DO TOPO PARA NÃO COBRIR AS ABAS */
+    .block-container { padding-top: 2rem !important; }
+    header { background-color: #F5F6F8 !important; } /* Deixa o topo da mesma cor do fundo */
 
-    /* TEXTO GLOBAL FORTE */
+    /* Texto Global Forte */
     h1, h2, h3, p, span, label, .stMarkdown { 
         font-family: 'Figtree', sans-serif !important;
         color: #1E1F23 !important; 
     }
 
-    /* CARTÃO ESTILO MONDAY */
+    /* Cartão Estilo Monday */
     .monday-card-pro {
         background-color: #FFFFFF !important;
         padding: 22px;
@@ -38,8 +35,9 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* BOTÕES UNIFICADOS (AZUL GLASS) */
-    .stButton > button {
+    /* BOTÕES UNIFICADOS (AZUL MONDAY) */
+    /* Isso força TODOS os botões primários a serem Azuis com borda lateral */
+    div.stButton > button {
         border-radius: 4px !important;
         font-weight: 700 !important;
         height: 42px;
@@ -51,7 +49,7 @@ st.markdown("""
         color: #1E1F23 !important;
     }
 
-    /* Estilo Azul para botões primários */
+    /* Estilo Azul para botões com type="primary" */
     .stButton > button[kind="primary"] {
         background-color: #E8F4FF !important;
         color: #0073EA !important;
@@ -62,25 +60,16 @@ st.markdown("""
     .stButton > button[kind="primary"]:hover {
         background-color: #D1E9FF !important;
         border-color: #0073EA !important;
+        color: #0073EA !important;
     }
 
-    /* ESTILO DAS ABAS (TABS) - VISÍVEIS E LIMPAS */
+    /* Estilo das Abas (Mais visíveis) */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #FFFFFF;
-        padding: 8px 12px;
+        padding: 10px;
         border-radius: 8px;
         border: 1px solid #D0D4E4;
-        gap: 15px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 40px;
-        white-space: pre;
-        color: #676879 !important;
-        font-weight: 600;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #0073EA !important;
-        border-bottom: 2px solid #0073EA !important;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -132,8 +121,7 @@ tab1, tab2, tab3 = st.tabs(["📋 OPERAÇÃO", "📊 DESEMPENHO", "⚙️ CONFIG
 
 with tab1:
     meta_val = run_db("SELECT valor FROM config WHERE chave='meta_loja'", is_select=True).iloc[0,0]
-    hoje_dt = get_now().strftime('%Y-%m-%d')
-    df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{hoje_dt}%'", is_select=True)
+    df_hoje = run_db(f"SELECT * FROM historico WHERE data LIKE '{get_now().strftime('%Y-%m-%d')}%'", is_select=True)
     
     vendas_sucesso = df_hoje[df_hoje['evento'] == 'Sucesso']
     fat_h = vendas_sucesso['valor'].sum() if not vendas_sucesso.empty else 0.0
@@ -171,8 +159,8 @@ with tab1:
         fila = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for idx, v in fila.iterrows():
             is_1 = (idx == 0)
-            cl = "border-left: 8px solid #00C875; background-color: #F0FFF4;" if is_1 else ""
-            st.markdown(f"<div class='monday-card-pro' style='padding:15px; {cl}'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
+            cl = "primeiro-da-vez" if is_1 else ""
+            st.markdown(f"<div class='monday-card-pro {cl}' style='padding:15px;'><b>{v['nome'].upper()}</b>", unsafe_allow_html=True)
             
             b_cols = st.columns([1, 1, 1])
             if is_1:
@@ -215,27 +203,45 @@ with tab1:
         for _, v in vendedores[vendedores['status'] == 'Fora'].iterrows():
             st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
             st.write(f"👤 **{v['nome'].upper()}**")
-            if st.button(f"ENTRAR", key=f"ret_{v['id']}", type="primary", use_container_width=True):
+            if st.button(f"ENTRAR NA FILA", key=f"ret_{v['id']}", type="primary", use_container_width=True):
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Entrada", "Entrou", 0.0, 0, get_now().isoformat()))
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
+
+with tab2:
+    st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
+    st.write("### 📈 DESEMPENHO")
+    d_r = st.date_input("Filtrar Período:", value=(date.today() - timedelta(days=7), date.today()))
+    if isinstance(d_r, tuple) and len(d_r) == 2:
+        df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()), is_select=True)
+        if not df_f.empty:
+            df_ed = st.data_editor(df_f, use_container_width=True, hide_index=True)
+            if st.button("SALVAR ALTERAÇÕES", type="primary"):
+                run_db("DELETE FROM historico WHERE date(data) BETWEEN ? AND ?", (d_r[0].isoformat(), d_r[1].isoformat()))
+                for _, r in df_ed.iterrows():
+                    run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (r['vendedor'], r['evento'], r['motivo'], r['valor'], r['itens'], r['data']))
+                st.success("Dados atualizados!"); st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with tab3:
     st.markdown("<div class='monday-card-pro'>", unsafe_allow_html=True)
     st.write("### ⚙️ CONFIGURAÇÕES")
     nm = st.number_input("Meta da Loja (R$):", value=float(meta_val))
-    if st.button("SALVAR META", key="btn_meta_fix", type="primary"):
+    if st.button("SALVAR META", key="btn_save_meta", type="primary"):
         run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (nm,))
-        st.success("Meta salva com sucesso!")
+        st.success("Meta atualizada!")
         st.rerun()
     
     st.divider()
+    
     st.write("#### 👤 ADICIONAR VENDEDOR")
-    nn = st.text_input("NOME COMPLETO", key="name_input_fix")
-    if st.button("CADASTRAR VENDEDOR", key="btn_cad_fix", type="primary"):
+    nn = st.text_input("NOME COMPLETO", key="input_nome")
+    
+    # Botão Cadastrar agora é 100% igual aos outros e Azul
+    if st.button("CADASTRAR VENDEDOR", key="btn_cadastrar", type="primary"):
         if nn:
             run_db("INSERT INTO usuarios (nome, login, status, ordem) VALUES (?,?,?,?)", (nn, nn.lower(), 'Fora', 0))
-            st.success(f"{nn} cadastrado!")
+            st.success(f"{nn} adicionado com sucesso!")
             st.rerun()
     
     st.divider()
