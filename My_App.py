@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. ENGINE DE DADOS ---
-DB_NAME = 'sistema_elite_v45.db'
+DB_NAME = 'sistema_elite_v46.db'
 
 def run_db(query, params=(), is_select=False):
     with sqlite3.connect(DB_NAME, check_same_thread=False) as conn:
@@ -90,22 +90,34 @@ with tab1:
         st.write("### ⏳ Fila de Vez")
         fila = vendedores[vendedores['status'] == 'Esperando'].reset_index(drop=True)
         for idx, v in fila.iterrows():
-            classe = "vendedor-box primeiro" if idx == 0 else "vendedor-box"
-            st.markdown(f"<div class='{classe}'>👤 <b>{v['nome']}</b></div>", unsafe_allow_html=True)
-            b1, b2, b3 = st.columns(3)
-            if b1.button("Atender", key=f"at_{v['id']}"):
-                run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],)); st.rerun()
-            if b2.button("☕ Pausa", key=f"ps_{v['id']}"):
+            is_primeiro = (idx == 0)
+            classe = "vendedor-box primeiro" if is_primeiro else "vendedor-box"
+            st.markdown(f"<div class='{classe}'>👤 <b>{v['nome']}</b> {'(Sua vez!)' if is_primeiro else ''}</div>", unsafe_allow_html=True)
+            
+            # --- LÓGICA DE TRAVA ---
+            b_at, b_pa, b_fu = st.columns(3)
+            
+            # ATENDER: Só aparece para o 1º da fila
+            if is_primeiro:
+                if b_at.button("Atender", key=f"at_{v['id']}", type="primary"):
+                    run_db("UPDATE usuarios SET status='Atendendo' WHERE id=?", (v['id'],)); st.rerun()
+            else:
+                b_at.write("---") # Espaço vazio para manter o alinhamento
+            
+            # PAUSA: Todos podem pausar
+            if b_pa.button("☕ Pausa", key=f"ps_{v['id']}"):
                 st.session_state[f"pausando_{v['id']}"] = True
             
-            # --- NOVA REGRA FURA-FILA ---
-            if b3.button("⚡ Furar", key=f"fura_{v['id']}"):
-                st.session_state[f"furando_{v['id']}"] = True
+            # FURAR: Só aparece para quem NÃO é o 1º
+            if not is_primeiro:
+                if b_fu.button("⚡ Furar", key=f"fura_{v['id']}"):
+                    st.session_state[f"furando_{v['id']}"] = True
 
+            # Formulários Expansíveis
             if st.session_state.get(f"furando_{v['id']}", False):
                 with st.expander("⚡ Justificativa Fura-Fila", expanded=True):
-                    just = st.text_input("Motivo (ex: Cliente voltou):", key=f"j_{v['id']}")
-                    if st.button("Confirmar Prioridade", key=f"cj_{v['id']}"):
+                    just = st.text_input("Motivo:", key=f"j_{v['id']}")
+                    if st.button("Confirmar Furada", key=f"cj_{v['id']}"):
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Fura-Fila", just, 0.0, 0, get_now().isoformat()))
                         run_db("UPDATE usuarios SET status='Atendendo', ordem=? WHERE id=?", (get_min_ordem(), v['id']))
                         st.session_state[f"furando_{v['id']}"] = False; st.rerun()
@@ -113,14 +125,15 @@ with tab1:
             if st.session_state.get(f"pausando_{v['id']}", False):
                 with st.expander(f"Pausa: {v['nome']}", expanded=True):
                     mot_p = st.selectbox("Motivo:", ["Almoço", "Feedback", "Banheiro", "Outros"], key=f"sel_p_{v['id']}")
-                    if st.button("Confirmar", key=f"conf_p_{v['id']}"):
+                    if st.button("Confirmar Pausa", key=f"conf_p_{v['id']}"):
                         run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], "Pausa", mot_p, 0.0, 0, get_now().isoformat()))
                         run_db("UPDATE usuarios SET status='Pausa', ordem=0 WHERE id=?", (v['id'],))
                         st.session_state[f"pausando_{v['id']}"] = False; st.rerun()
 
     with col_acao:
         st.write("### 🚀 Atendendo")
-        for _, v in vendedores[vendedores['status'] == 'Atendendo'].iterrows():
+        atend = vendedores[vendedores['status'] == 'Atendendo']
+        for _, v in atend.iterrows():
             with st.expander(f"Finalizar: {v['nome']}", expanded=True):
                 res = st.selectbox("Resultado", ["Sucesso", "Não convertido", "Troca"], key=f"r_{v['id']}")
                 vlr, it, mot = 0.0, 0, res
@@ -129,7 +142,7 @@ with tab1:
                     it = st.number_input("Itens:", min_value=1, step=1, key=f"i_{v['id']}")
                 elif res == "Não convertido":
                     mot = st.selectbox("Motivo:", ["Preço", "Tamanho", "Cor", "Só olhando"], key=f"m_{v['id']}")
-                if st.button("✅ Gravar e Ir p/ Final da Fila", key=f"ff_{v['id']}"):
+                if st.button("✅ Concluir", key=f"ff_{v['id']}"):
                     run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (v['nome'], res, mot, vlr, it, get_now().isoformat()))
                     run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
 
@@ -141,6 +154,7 @@ with tab1:
                 run_db("UPDATE usuarios SET status='Esperando', ordem=? WHERE id=?", (get_max_ordem(), v['id'])); st.rerun()
 
 with tab2:
+    # ... (Aba de Desempenho e Histórico idêntica à v45 para manter estabilidade)
     st.write("### 📊 Gestão e Histórico")
     with st.expander("➕ Lançamento Manual"):
         with st.form("f_man"):
@@ -153,6 +167,7 @@ with tab2:
                 data_iso = datetime.combine(m_d, time(12, 0)).isoformat()
                 run_db("INSERT INTO historico (vendedor, evento, motivo, valor, itens, data) VALUES (?,?,?,?,?,?)", (m_v, m_r, m_r, m_vlr, m_it, data_iso))
                 st.success("Salvo!"); st.rerun()
+    
     d_range = st.date_input("Filtrar Período:", value=(date.today() - timedelta(days=7), date.today()))
     if isinstance(d_range, tuple) and len(d_range) == 2:
         df_f = run_db("SELECT * FROM historico WHERE date(data) BETWEEN ? AND ?", (d_range[0].isoformat(), d_range[1].isoformat()), is_select=True)
@@ -169,6 +184,7 @@ with tab2:
             st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name="relatorio.xlsx")
 
 with tab3:
+    st.write("### ⚙️ Administração")
     n_meta = st.number_input("Meta Diária:", value=float(meta_loja))
     if st.button("Salvar Meta"): run_db("UPDATE config SET valor=? WHERE chave='meta_loja'", (n_meta,)); st.rerun()
     st.divider()
